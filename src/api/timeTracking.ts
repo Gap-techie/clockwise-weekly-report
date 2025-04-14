@@ -1,5 +1,5 @@
 
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabaseClient';
 import { Project, TimeEntry } from '@/lib/types';
 
 // User Functions
@@ -9,9 +9,9 @@ export async function getCurrentUser() {
   if (!user) return null;
   
   const { data, error } = await supabase
-    .from('users')
+    .from('profiles')
     .select('*')
-    .eq('auth_id', user.id)
+    .eq('id', user.id)
     .single();
     
   if (error) throw error;

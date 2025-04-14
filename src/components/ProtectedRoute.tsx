@@ -13,7 +13,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     }
   }, [user, loading, navigate]);
 
-  // Show nothing while checking auth status
+  // Show a loading state while checking auth status
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
