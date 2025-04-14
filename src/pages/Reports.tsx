@@ -1,4 +1,3 @@
-
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +12,7 @@ const Reports = () => {
   
   // Prepare data for the chart
   const dailyHoursData = Object.entries(weeklySummary.days).map(([date, day]) => ({
-    name: formatDateDisplay(new Date(date)),
+    name: formatDateDisplay(day.date instanceof Date ? day.date : new Date(day.date)),
     regular: parseFloat(day.regularHours.toFixed(1)),
     overtime: parseFloat(day.overtimeHours.toFixed(1)),
   }));
@@ -24,10 +23,19 @@ const Reports = () => {
   timeEntries.forEach(entry => {
     if (!entry.clockOutTime) return;
     
+    // Ensure clockInTime and clockOutTime are Date objects
+    const clockInTime = entry.clockInTime instanceof Date 
+      ? entry.clockInTime 
+      : new Date(entry.clockInTime);
+    
+    const clockOutTime = entry.clockOutTime instanceof Date 
+      ? entry.clockOutTime 
+      : new Date(entry.clockOutTime as string);
+    
     const project = projects.find(p => p.id === entry.projectId);
     if (!project) return;
     
-    const durationMs = entry.clockOutTime.getTime() - entry.clockInTime.getTime();
+    const durationMs = clockOutTime.getTime() - clockInTime.getTime();
     const hours = durationMs / (1000 * 60 * 60);
     
     projectHours[project.name] = (projectHours[project.name] || 0) + hours;

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useTimeStore } from '@/lib/timeStore';
 import { format, addWeeks, subWeeks } from 'date-fns';
@@ -28,7 +27,12 @@ const WeeklyActivity = () => {
     timeEntries.forEach(entry => {
       if (!entry.clockOutTime) return;
       
-      const entryDate = formatDate(entry.clockInTime);
+      // Ensure clockInTime is a Date object
+      const clockInTime = entry.clockInTime instanceof Date 
+        ? entry.clockInTime 
+        : new Date(entry.clockInTime);
+      
+      const entryDate = formatDate(clockInTime);
       const isInWeek = Object.keys(summary.days).includes(entryDate);
       
       if (isInWeek) {
@@ -52,11 +56,20 @@ const WeeklyActivity = () => {
         timeEntries.forEach(entry => {
           if (!entry.clockOutTime) return;
           
-          const entryDateStr = formatDate(entry.clockInTime);
+          // Ensure clockInTime and clockOutTime are Date objects
+          const clockInTime = entry.clockInTime instanceof Date 
+            ? entry.clockInTime 
+            : new Date(entry.clockInTime);
+          
+          const clockOutTime = entry.clockOutTime instanceof Date 
+            ? entry.clockOutTime 
+            : new Date(entry.clockOutTime as string);
+          
+          const entryDateStr = formatDate(clockInTime);
           if (entryDateStr === dateStr && 
               entry.projectId === projectId && 
               entry.jobCode === jobCode) {
-            const durationMs = entry.clockOutTime.getTime() - entry.clockInTime.getTime();
+            const durationMs = clockOutTime.getTime() - clockInTime.getTime();
             hours += durationMs / (1000 * 60 * 60);
           }
         });

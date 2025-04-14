@@ -14,11 +14,23 @@ const RecentActivity = () => {
       .filter(entry => entry.clockOutTime) // Only show completed entries
       .map(entry => {
         const project = projects.find(p => p.id === entry.projectId);
-        const durationMs = entry.clockOutTime!.getTime() - entry.clockInTime.getTime();
+        
+        // Ensure clockInTime and clockOutTime are Date objects
+        const clockInTime = entry.clockInTime instanceof Date 
+          ? entry.clockInTime 
+          : new Date(entry.clockInTime);
+        
+        const clockOutTime = entry.clockOutTime instanceof Date 
+          ? entry.clockOutTime 
+          : new Date(entry.clockOutTime as string);
+        
+        const durationMs = clockOutTime.getTime() - clockInTime.getTime();
         const hours = (durationMs / (1000 * 60 * 60)).toFixed(1);
         
         return {
           ...entry,
+          clockInTime,
+          clockOutTime,
           projectName: project?.name || 'Unknown Project',
           hours
         };
@@ -53,7 +65,7 @@ const RecentActivity = () => {
                 <td className="py-3 text-sm">{entry.projectName}</td>
                 <td className="py-3 text-sm">{entry.jobCode}</td>
                 <td className="py-3 text-sm">{formatTimeForDisplay(entry.clockInTime)}</td>
-                <td className="py-3 text-sm">{formatTimeForDisplay(entry.clockOutTime!)}</td>
+                <td className="py-3 text-sm">{formatTimeForDisplay(entry.clockOutTime)}</td>
                 <td className="py-3 text-right font-medium">{entry.hours}</td>
               </tr>
             ))

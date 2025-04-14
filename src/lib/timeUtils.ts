@@ -61,6 +61,12 @@ export function getDatesForWeek(date: Date): Date[] {
   return dates;
 }
 
+// Ensure a date is a Date object
+export function ensureDate(date: Date | string): Date {
+  if (date instanceof Date) return date;
+  return new Date(date);
+}
+
 // Calculate weekly summary from time entries
 export function calculateWeeklySummary(entries: TimeEntry[], date: Date): WeeklySummary {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
@@ -89,8 +95,14 @@ export function calculateWeeklySummary(entries: TimeEntry[], date: Date): Weekly
   entries.forEach((entry) => {
     if (!entry.clockOutTime) return;
     
-    const entryStart = entry.clockInTime;
-    const entryEnd = entry.clockOutTime;
+    // Ensure clockInTime and clockOutTime are Date objects
+    const entryStart = entry.clockInTime instanceof Date 
+      ? entry.clockInTime 
+      : new Date(entry.clockInTime);
+    
+    const entryEnd = entry.clockOutTime instanceof Date 
+      ? entry.clockOutTime 
+      : new Date(entry.clockOutTime as string);
     
     if (isWithinInterval(entryStart, weekInterval) || isWithinInterval(entryEnd, weekInterval)) {
       const duration = calculateDurationInSeconds(entryStart, entryEnd);
@@ -140,9 +152,18 @@ export function calculateTodayHours(entries: TimeEntry[]): number {
   return entries.reduce((total, entry) => {
     if (!entry.clockOutTime) return total;
     
-    const entryDate = formatDate(entry.clockInTime);
+    // Ensure clockInTime is a Date object
+    const clockInTime = entry.clockInTime instanceof Date 
+      ? entry.clockInTime 
+      : new Date(entry.clockInTime);
+    
+    const clockOutTime = entry.clockOutTime instanceof Date 
+      ? entry.clockOutTime 
+      : new Date(entry.clockOutTime as string);
+    
+    const entryDate = formatDate(clockInTime);
     if (entryDate === todayDateStr) {
-      const duration = calculateDurationInSeconds(entry.clockInTime, entry.clockOutTime);
+      const duration = calculateDurationInSeconds(clockInTime, clockOutTime);
       return total + calculateHours(duration);
     }
     return total;
