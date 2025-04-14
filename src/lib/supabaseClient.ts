@@ -1,8 +1,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Replace these with your actual Supabase URL and anon key
-const supabaseUrl = 'https://placeholder-project.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyLXByb2plY3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTYxMjM3ODE2NCwiZXhwIjoxOTI3OTU0MTY0fQ.placeholder-key';
+// Using the values from the integrated Supabase client
+const supabaseUrl = 'https://hhdjatldrffgnkzbwrmx.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoZGphdGxkcmZmZ25remJ3cm14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ1ODA2MzYsImV4cCI6MjA2MDE1NjYzNn0.dOW7_q1J69UhUyymvwa7BMIlh6SyWqHccv36pDd_8hM';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
