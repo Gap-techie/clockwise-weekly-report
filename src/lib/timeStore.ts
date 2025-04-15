@@ -1,7 +1,8 @@
 
 import { create } from 'zustand';
-import { Project, TimeEntry, Job } from './types';
+import { Project, TimeEntry, Job, WeeklySummary, DailySummary } from './types';
 import { SAMPLE_PROJECTS, SAMPLE_JOBS, SAMPLE_TIME_ENTRIES } from './mockData';
+import { calculateWeeklySummary, calculateTodayHours, formatDate } from './timeUtils';
 
 type TimeTrackingState = {
   projects: Project[];
@@ -10,8 +11,12 @@ type TimeTrackingState = {
   activeTimeEntry: TimeEntry | null;
   selectedProjectId: string | null;
   selectedJobId: string | null;
+  currentWeekDate: Date;
   loading: boolean;
   error: string | null;
+  
+  // Computed properties and getters
+  activeEntry: TimeEntry | null;
   
   // Project actions
   setProjects: (projects: Project[]) => void;
@@ -23,6 +28,16 @@ type TimeTrackingState = {
   startTimeEntry: () => void;
   stopTimeEntry: (entryId: string) => void;
   setActiveTimeEntry: (entry: TimeEntry | null) => void;
+  clockIn: (projectId: string, jobCode: string) => void;
+  clockOut: () => void;
+  
+  // Weekly activity
+  setCurrentWeekDate: (date: Date) => void;
+  
+  // Stats and summary methods
+  getWeeklySummary: () => WeeklySummary;
+  getTodayHours: () => number;
+  getActiveTimer: () => number;
   
   // Loading & error state
   setLoading: (loading: boolean) => void;
@@ -36,8 +51,14 @@ export const useTimeStore = create<TimeTrackingState>((set, get) => ({
   activeTimeEntry: SAMPLE_TIME_ENTRIES.find(entry => entry.clockOutTime === null) || null,
   selectedProjectId: null,
   selectedJobId: null,
+  currentWeekDate: new Date(),
   loading: false,
   error: null,
+  
+  // Computed properties
+  get activeEntry() {
+    return get().activeTimeEntry;
+  },
   
   // Project actions
   setProjects: (projects) => set({ projects }),
@@ -90,6 +111,63 @@ export const useTimeStore = create<TimeTrackingState>((set, get) => ({
   },
   
   setActiveTimeEntry: (entry) => set({ activeTimeEntry: entry }),
+  
+  clockIn: (projectId, jobCode) => {
+    const newEntry: TimeEntry = {
+      id: `entry-${Date.now()}`,
+      projectId,
+      jobId: "", // This would typically come from the server
+      jobCode,
+      clockInTime: new Date(),
+      clockOutTime: null
+    };
+    
+    set((state) => ({
+      timeEntries: [...state.timeEntries, newEntry],
+      activeTimeEntry: newEntry,
+      error: null
+    }));
+  },
+  
+  clockOut: () => {
+    const { activeTimeEntry } = get();
+    if (!activeTimeEntry) return;
+    
+    set((state) => ({
+      timeEntries: state.timeEntries.map(entry => 
+        entry.id === activeTimeEntry.id
+          ? { ...entry, clockOutTime: new Date() }
+          : entry
+      ),
+      activeTimeEntry: null
+    }));
+  },
+  
+  // Weekly activity
+  setCurrentWeekDate: (date) => set({ currentWeekDate: date }),
+  
+  // Stats and summary methods
+  getWeeklySummary: () => {
+    const { timeEntries, currentWeekDate } = get();
+    return calculateWeeklySummary(timeEntries, currentWeekDate);
+  },
+  
+  getTodayHours: () => {
+    const { timeEntries } = get();
+    return calculateTodayHours(timeEntries);
+  },
+  
+  getActiveTimer: () => {
+    const { activeTimeEntry } = get();
+    if (!activeTimeEntry) return 0;
+    
+    const start = activeTimeEntry.clockInTime instanceof Date 
+      ? activeTimeEntry.clockInTime 
+      : new Date(activeTimeEntry.clockInTime);
+      
+    const now = new Date();
+    return Math.floor((now.getTime() - start.getTime()) / 1000);
+  },
   
   // Loading & error state
   setLoading: (loading) => set({ loading }),
