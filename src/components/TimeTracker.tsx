@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import BreakTimer from './BreakTimer';
-
+import useProjects from '../hooks/queries/useProjects';
 interface Project {
   id: string;
   name: string;
@@ -36,39 +36,6 @@ interface TimeEntry {
   clock_out?: string;
   is_complete: boolean;
   notes?: string;
-}
-
-
-const fetchProjects = async (user) => {
-  if (!user) return [];
-
-  const { data, error } = await supabase
-    .from('projects')
-    .select('id, name, description, is_active')
-    .eq('is_active', true)
-    .order('name');
-
-  if (error) throw error;
-
-  return data || [];
-};
-
-
-function useProjects(user, toast) {
-  return useQuery({
-    queryKey: ['projects', user?.id], // using user id ensures refetch on user change
-    queryFn: () => fetchProjects(user),
-    enabled: !!user, // don't run the query if user is not available
-    onError: (error) => {
-      console.error('Error fetching projects:', error);
-      toast({
-        title: "Error loading projects",
-        description: "Please try again later",
-        variant: "destructive"
-      });
-    },
-    staleTime: 5 * 60 * 1000, // optional: avoid frequent refetches for 5 min
-  });
 }
 
 const fetchJobs = async (projectId) => {
@@ -225,7 +192,6 @@ const TimeTracker = () => {
       const { data: availableJobs, error: jobsError } = await supabase
         .from('jobs')
         .select('id, code')
-        .eq('project_id', projectId)
         .eq('is_active', true);
 
       if (jobsError) {
@@ -242,7 +208,6 @@ const TimeTracker = () => {
       const { data, error } = await supabase
         .from('jobs')
         .select('id, code, title')
-        .eq('project_id', projectId)
         .ilike('code', code.trim()) // Case insensitive comparison
         .eq('is_active', true)
         .maybeSingle();
@@ -290,6 +255,7 @@ const TimeTracker = () => {
     
     try {
       if (currentTimeEntry) {
+        console.log('Clocking out:', currentTimeEntry);
         // Clock Out Logic
         const now = new Date().toISOString();
         
@@ -334,6 +300,10 @@ const TimeTracker = () => {
           duration: 3000
         });
       } else {
+        console.log('Clocking inxxxx:', {
+          selectedProject,
+          jobCode: jobCode.trim()
+        });
         // Clock In Logic
         if (!selectedProject || !jobCode.trim()) {
           toast({
@@ -367,7 +337,6 @@ const TimeTracker = () => {
         const { data: jobData, error: jobError } = await supabase
           .from('jobs')
           .select('id, code')
-          .eq('project_id', selectedProject)
           .ilike('code', jobCode.trim())
           .eq('is_active', true)
           .single();
@@ -393,6 +362,13 @@ const TimeTracker = () => {
         });
         
         // Create time entry
+        console.log('Creating time entry:', {
+          user_id: user.id,
+          project_id: selectedProject,
+          job_id: jobData.id,
+          clock_in: new Date().toISOString(),
+          is_complete: false
+        });
         const { data: entryData, error: entryError } = await supabase
           .from('time_entries')
           .insert({
@@ -414,7 +390,8 @@ const TimeTracker = () => {
             )
           `)
           .single();
-          
+
+        console.log('Time entry created:', entryData);
         if (entryError) {
           console.error('Error creating time entry:', entryError);
           if (entryError.code === '42P01') {

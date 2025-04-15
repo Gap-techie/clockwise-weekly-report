@@ -54,11 +54,6 @@ const Index = () => {
         <div className="mt-6">
           <Tabs defaultValue="activity">
             <div className="flex justify-between items-center">
-              <TabsList>
-                <TabsTrigger value="activity">Recent Activity</TabsTrigger>
-                <TabsTrigger value="weekly">Weekly Activity</TabsTrigger>
-              </TabsList>
-              
               {!emailSetup && (
                 <button 
                   onClick={handleSetupEmailReports}
