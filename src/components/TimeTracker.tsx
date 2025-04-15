@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Clock } from 'lucide-react';
 import { useTimeStore } from '@/lib/timeStore';
@@ -9,7 +8,34 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
+import { cn } from '@/lib/utils';
 import BreakTimer from './BreakTimer';
+
+interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+}
+
+interface Job {
+  id: string;
+  code: string;
+  title: string;
+  project_id: string;
+  is_active: boolean;
+}
+
+interface TimeEntry {
+  id: string;
+  user_id: string;
+  project_id: string;
+  job_id: string;
+  clock_in: string;
+  clock_out?: string;
+  is_complete: boolean;
+  notes?: string;
+}
 
 const TimeTracker = () => {
   const { 
@@ -23,19 +49,23 @@ const TimeTracker = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [jobLoading, setJobLoading] = useState(false);
-  const [projects, setProjects] = useState<{id: string; name: string}[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [jobCode, setJobCode] = useState<string>('');
   const [timer, setTimer] = useState(0);
-  
-  // Fetch projects from database
+  const [currentTimeEntry, setCurrentTimeEntry] = useState<TimeEntry | null>(null);
+
+  // Fetch active projects from database
   useEffect(() => {
     async function fetchProjects() {
+      if (!user) return;
+      
       try {
         setLoading(true);
         const { data, error } = await supabase
           .from('projects')
-          .select('id, name')
+          .select('id, name, description, is_active')
           .eq('is_active', true)
           .order('name');
           
@@ -55,7 +85,50 @@ const TimeTracker = () => {
     }
     
     fetchProjects();
-  }, [toast]);
+  }, [user, toast]);
+
+  // Fetch jobs when project is selected
+  useEffect(() => {
+    async function fetchJobs() {
+      if (!selectedProject) {
+        setJobs([]);
+        return;
+      }
+      
+      try {
+        setJobLoading(true);
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('id, code, title, project_id, is_active')
+          .eq('project_id', selectedProject)
+          .eq('is_active', true)
+          .order('code');
+          
+        if (error) {
+          console.error('Error fetching jobs:', error);
+          throw error;
+        }
+        
+        console.log('Fetched jobs for project:', {
+          projectId: selectedProject,
+          jobs: data?.map(j => j.code) || []
+        });
+        
+        setJobs(data || []);
+      } catch (error) {
+        console.error('Error fetching jobs:', error);
+        toast({
+          title: "Error loading job codes",
+          description: "Please try again later",
+          variant: "destructive"
+        });
+      } finally {
+        setJobLoading(false);
+      }
+    }
+    
+    fetchJobs();
+  }, [selectedProject, toast]);
   
   // Check for active time entry
   useEffect(() => {
@@ -66,29 +139,44 @@ const TimeTracker = () => {
         setLoading(true);
         const { data, error } = await supabase
           .from('time_entries')
-          .select('id, project_id, job_id')
+          .select(`
+            id,
+            project_id,
+            job_id,
+            clock_in,
+            clock_out,
+            is_complete,
+            jobs!inner (
+              code
+            )
+          `)
           .eq('user_id', user.id)
           .eq('is_complete', false)
           .maybeSingle();
           
-        if (error) throw error;
+        if (error) {
+          console.error('Error checking active entry:', error);
+          toast({
+            title: "Error checking time entry",
+            description: "Please try again later",
+            variant: "destructive"
+          });
+          return;
+        }
         
         if (data) {
-          // Get the job code for the active entry
-          const { data: jobData } = await supabase
-            .from('jobs')
-            .select('code')
-            .eq('id', data.job_id)
-            .single();
-            
-          if (jobData) {
-            storeClockIn(data.project_id, jobData.code);
-            setSelectedProject(data.project_id);
-            setJobCode(jobData.code);
-          }
+          setCurrentTimeEntry(data);
+          storeClockIn(data.project_id, data.jobs.code);
+          setSelectedProject(data.project_id);
+          setJobCode(data.jobs.code);
         }
       } catch (error) {
         console.error('Error checking active entry:', error);
+        toast({
+          title: "Error checking time entry",
+          description: "Please try again later",
+          variant: "destructive"
+        });
       } finally {
         setLoading(false);
       }
@@ -97,11 +185,11 @@ const TimeTracker = () => {
     if (user) {
       checkActiveEntry();
     }
-  }, [user, storeClockIn]);
+  }, [user, storeClockIn, toast]);
   
   // Update timer for active time entry
   useEffect(() => {
-    if (!activeEntry) {
+    if (!currentTimeEntry) {
       setTimer(0);
       return;
     }
@@ -113,7 +201,7 @@ const TimeTracker = () => {
     }, 1000);
     
     return () => clearInterval(interval);
-  }, [activeEntry, getActiveTimer]);
+  }, [currentTimeEntry, getActiveTimer]);
   
   // Validate job code against database
   const validateJobCode = async (projectId: string, code: string): Promise<string | null> => {
@@ -123,23 +211,61 @@ const TimeTracker = () => {
       if (!code.trim()) {
         return "Job code is required";
       }
+
+      // Log the input values
+      console.log('Validating job code:', {
+        projectId,
+        code: code.trim(),
+        timestamp: new Date().toISOString()
+      });
       
-      // Check if job code exists for the selected project
+      // First, let's check what jobs are available for this project
+      const { data: availableJobs, error: jobsError } = await supabase
+        .from('jobs')
+        .select('id, code')
+        .eq('project_id', projectId)
+        .eq('is_active', true);
+
+      if (jobsError) {
+        console.error('Error fetching available jobs:', jobsError);
+        throw jobsError;
+      }
+
+      console.log('Available jobs for project:', {
+        projectId,
+        jobs: availableJobs?.map(j => j.code) || []
+      });
+      
+      // Now check for the specific job code
       const { data, error } = await supabase
         .from('jobs')
-        .select('id')
+        .select('id, code, title')
         .eq('project_id', projectId)
-        .eq('code', code.trim())
+        .ilike('code', code.trim()) // Case insensitive comparison
         .eq('is_active', true)
         .maybeSingle();
         
-      if (error) throw error;
-      
-      if (!data) {
-        return "Invalid job code. Please enter a valid code for this project.";
+      if (error) {
+        console.error('Database error during job code validation:', error);
+        throw error;
       }
       
-      return null; // No error, job code is valid
+      // Log the validation result
+      console.log('Job code validation result:', {
+        projectId,
+        searchedCode: code.trim(),
+        found: !!data,
+        matchedJob: data
+      });
+      
+      if (!data) {
+        // Log available codes for debugging
+        const availableCodes = availableJobs?.map(j => j.code).join(', ') || 'none';
+        console.log(`No matching job code found. Available codes: ${availableCodes}`);
+        return `Invalid job code. Available codes: ${availableCodes}`;
+      }
+      
+      return null;
     } catch (error) {
       console.error('Error validating job code:', error);
       return "Error validating job code. Please try again.";
@@ -161,37 +287,67 @@ const TimeTracker = () => {
     setLoading(true);
     
     try {
-      if (activeEntry) {
+      if (currentTimeEntry) {
         // Clock Out Logic
-        const { error } = await supabase
+        const now = new Date().toISOString();
+        
+        // Update time entry
+        const { error: updateError } = await supabase
           .from('time_entries')
           .update({
-            clock_out: new Date().toISOString(),
+            clock_out: now,
             is_complete: true
           })
-          .eq('id', activeEntry.id);
+          .eq('id', currentTimeEntry.id)
+          .eq('user_id', user.id); // Add user_id check for security
           
-        if (error) throw error;
+        if (updateError) throw updateError;
         
-        storeClockOut();
+        // Create daily summary entry
+        const { error: summaryError } = await supabase
+          .from('daily_summaries')
+          .upsert({
+            user_id: user.id,
+            project_id: currentTimeEntry.project_id,
+            job_id: currentTimeEntry.job_id,
+            date: now.split('T')[0],
+            day_of_week: new Date().getDay(),
+            regular_hours: timer / 3600,
+            overtime_hours: 0,
+            total_hours: timer / 3600,
+            created_at: now
+          })
+          .select();
+          
+        if (summaryError) throw summaryError;
+        
+        setCurrentTimeEntry(null);
+        await storeClockOut();
         setSelectedProject('');
         setJobCode('');
         
         toast({
-          title: "Clocked Out",
-          description: "Your time has been recorded"
+          title: "Clocked Out Successfully",
+          description: "You have been clocked out. You can now clock in again.",
+          duration: 3000
         });
       } else {
         // Clock In Logic
-        if (!selectedProject) {
+        if (!selectedProject || !jobCode.trim()) {
           toast({
-            title: "Project Required",
-            description: "Please select a project",
+            title: "Missing Information",
+            description: "Please select a project and enter a job code",
             variant: "destructive"
           });
           setLoading(false);
           return;
         }
+
+        console.log('Starting clock in process:', {
+          projectId: selectedProject,
+          jobCode: jobCode.trim(),
+          timestamp: new Date().toISOString()
+        });
         
         // Validate job code
         const validationError = await validateJobCode(selectedProject, jobCode);
@@ -205,18 +361,37 @@ const TimeTracker = () => {
           return;
         }
         
-        // Get job_id from code
+        // Get job_id with case-insensitive comparison
         const { data: jobData, error: jobError } = await supabase
           .from('jobs')
-          .select('id')
+          .select('id, code')
           .eq('project_id', selectedProject)
-          .eq('code', jobCode.trim())
+          .ilike('code', jobCode.trim())
+          .eq('is_active', true)
           .single();
           
-        if (jobError) throw jobError;
+        if (jobError) {
+          console.error('Error fetching job:', jobError);
+          throw new Error('Could not find job code. Please try again.');
+        }
+        
+        if (!jobData) {
+          toast({
+            title: "Invalid Job Code",
+            description: "Could not find the specified job code for this project.",
+            variant: "destructive"
+          });
+          setLoading(false);
+          return;
+        }
+
+        console.log('Found job for clock in:', {
+          jobId: jobData.id,
+          jobCode: jobData.code
+        });
         
         // Create time entry
-        const { data, error } = await supabase
+        const { data: entryData, error: entryError } = await supabase
           .from('time_entries')
           .insert({
             user_id: user.id,
@@ -225,16 +400,50 @@ const TimeTracker = () => {
             clock_in: new Date().toISOString(),
             is_complete: false
           })
-          .select()
+          .select(`
+            id,
+            user_id,
+            project_id,
+            job_id,
+            clock_in,
+            is_complete,
+            jobs!inner (
+              code
+            )
+          `)
           .single();
           
-        if (error) throw error;
+        if (entryError) {
+          console.error('Error creating time entry:', entryError);
+          if (entryError.code === '42P01') {
+            toast({
+              title: "Database Error",
+              description: "There was an issue with the database policy. Please contact support.",
+              variant: "destructive"
+            });
+          } else {
+            throw entryError;
+          }
+          return;
+        }
         
+        if (!entryData) {
+          throw new Error('No data returned from time entry creation');
+        }
+
+        console.log('Successfully created time entry:', {
+          entryId: entryData.id,
+          projectId: entryData.project_id,
+          jobCode: entryData.jobs.code
+        });
+        
+        setCurrentTimeEntry(entryData as TimeEntry);
         storeClockIn(selectedProject, jobCode);
         
         toast({
-          title: "Clocked In",
-          description: "Time tracking has started"
+          title: "Clocked In Successfully",
+          description: "Time tracking has started. You can now clock out when needed.",
+          duration: 3000
         });
       }
     } catch (error) {
@@ -262,11 +471,19 @@ const TimeTracker = () => {
             Select Project
           </label>
           <Select
-            disabled={!!activeEntry || loading}
+            disabled={!!currentTimeEntry || loading}
             value={selectedProject}
-            onValueChange={setSelectedProject}
+            onValueChange={(value) => {
+              setSelectedProject(value);
+              setJobCode(''); // Clear job code when project changes
+            }}
           >
-            <SelectTrigger>
+            <SelectTrigger 
+              className={cn(
+                "transition-colors duration-200",
+                currentTimeEntry ? "bg-gray-100 cursor-not-allowed" : "bg-white hover:bg-gray-50"
+              )}
+            >
               <SelectValue placeholder="Select a project" />
             </SelectTrigger>
             <SelectContent>
@@ -287,24 +504,44 @@ const TimeTracker = () => {
             id="jobCode"
             placeholder="Enter job code"
             value={jobCode}
-            onChange={(e) => setJobCode(e.target.value)}
-            disabled={!!activeEntry || loading}
+            onChange={(e) => setJobCode(e.target.value.toUpperCase())} // Convert to uppercase
+            disabled={!!currentTimeEntry || loading || !selectedProject} // Disable if no project selected
+            className={cn(
+              "transition-colors duration-200",
+              currentTimeEntry ? "bg-gray-100 cursor-not-allowed" : 
+              !selectedProject ? "bg-gray-50 cursor-not-allowed" :
+              "bg-white hover:bg-gray-50"
+            )}
           />
+          {selectedProject && jobs.length > 0 && !currentTimeEntry && (
+            <div className="mt-1 text-sm text-gray-500">
+              Available codes: {jobs.map(job => job.code).join(', ')}
+            </div>
+          )}
         </div>
         
         <Button
-          className="w-full py-6"
+          className={cn(
+            "w-full py-6 transition-colors duration-200",
+            currentTimeEntry 
+              ? "bg-red-500 hover:bg-red-600 text-white" 
+              : "bg-emerald-500 hover:bg-emerald-600 text-white"
+          )}
           onClick={handleClockInOut}
-          disabled={loading || jobLoading || (!activeEntry && (!selectedProject || !jobCode))}
-          variant={activeEntry ? "destructive" : "default"}
+          disabled={
+            loading || 
+            jobLoading || 
+            (!currentTimeEntry && (!selectedProject || !jobCode)) ||
+            (!currentTimeEntry && !selectedProject)
+          }
         >
           <Clock className="mr-2 h-5 w-5" />
-          {loading ? 'Processing...' : activeEntry ? 'Clock Out' : 'Clock In'}
+          {loading ? 'Processing...' : currentTimeEntry ? 'Clock Out' : 'Clock In'}
         </Button>
         
-        {activeEntry && (
+        {currentTimeEntry && (
           <BreakTimer 
-            timeEntryId={activeEntry.id}
+            timeEntryId={currentTimeEntry.id}
             disabled={loading}
           />
         )}

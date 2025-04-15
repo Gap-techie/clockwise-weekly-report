@@ -1,4 +1,3 @@
-
 import { create } from 'zustand';
 import { Project, TimeEntry, Job, WeeklySummary, DailySummary } from './types';
 import { SAMPLE_PROJECTS, SAMPLE_JOBS, SAMPLE_TIME_ENTRIES } from './mockData';
@@ -100,14 +99,14 @@ export const useTimeStore = create<TimeTrackingState>((set, get) => ({
   },
   
   stopTimeEntry: (entryId) => {
-    set((state) => ({
-      timeEntries: state.timeEntries.map(entry => 
-        entry.id === entryId
-          ? { ...entry, clockOutTime: new Date() }
-          : entry
-      ),
-      activeTimeEntry: null
-    }));
+    set((state) => {
+        const entryIndex = state.timeEntries.findIndex(entry => entry.id === entryId);
+        if (entryIndex === -1) return state; // Entry not found
+
+        const updatedEntries = [...state.timeEntries];
+        updatedEntries[entryIndex].clockOutTime = new Date(); // Set clock out time
+        return { timeEntries: updatedEntries, activeTimeEntry: null }; // Update state
+    });
   },
   
   setActiveTimeEntry: (entry) => set({ activeTimeEntry: entry }),
