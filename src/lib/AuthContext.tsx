@@ -74,7 +74,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         password,
         options: {
           data: { full_name: fullName },
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: `${window.location.origin}/auth`,
         }
       });
       
@@ -90,13 +90,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       console.log('Sign up response:', data);
       
-      // Check if email confirmation is needed
+      // Check if user already exists
       if (data?.user?.identities?.length === 0) {
         console.log('User already exists, try signing in instead');
-        return { error: { message: 'Account already exists. Please sign in instead.' }, data };
+        return { 
+          error: { message: 'Account already exists. Please sign in instead.' }, 
+          data 
+        };
       }
       
-      // If auto-confirmation is enabled (development setting), this will work right away
+      // If auto-confirmation is enabled (development setting)
       if (data?.user?.confirmed_at) {
         console.log('Sign up successful with auto-confirmation');
         toast({
