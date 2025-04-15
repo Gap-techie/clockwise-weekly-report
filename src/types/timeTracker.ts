@@ -1,4 +1,3 @@
-
 export interface Project {
     id: string;
     name: string;
@@ -23,5 +22,8 @@ export interface Project {
     clock_out?: string;
     is_complete: boolean;
     notes?: string;
+    jobs: {
+      code: string;
+    };
   }
   

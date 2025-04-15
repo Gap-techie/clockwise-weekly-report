@@ -9,22 +9,24 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
 import BreakTimer from './BreakTimer';
 import useProjects from '../hooks/queries/useProjects';
 import { useJobs } from '../hooks/queries/useJobs';
 import validateJobCode from '@/utils/validateJobCode';
 import { TimeEntry } from '@/types/timeTracker';
+import { fetchActiveJobByCode } from '@/lib/supabase/jobs';
+import { createTimeEntry } from '@/lib/supabase/timeEntries';
+
 
 
 const TimeTracker = () => {
-  const { 
+  const {
     activeEntry,
-    clockIn: storeClockIn, 
+    clockIn: storeClockIn,
     clockOut: storeClockOut,
     getActiveTimer
   } = useTimeStore();
-  
+
   const { toast } = useToast();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -36,18 +38,19 @@ const TimeTracker = () => {
 
   const { data: projects = [], isLoading: isProjectLoading } = useProjects(user, toast);
   const { data: jobs = [], isLoading: isJobLoading } = useJobs(selectedProject, toast);
-  
+
   // Check for active time entry
   useEffect(() => {
     async function checkActiveEntry() {
       if (!user) return;
-      
+
       try {
         setLoading(true);
         const { data, error } = await supabase
           .from('time_entries')
           .select(`
             id,
+            user_id,
             project_id,
             job_id,
             clock_in,
@@ -60,7 +63,7 @@ const TimeTracker = () => {
           .eq('user_id', user.id)
           .eq('is_complete', false)
           .maybeSingle();
-          
+
         if (error) {
           console.error('Error checking active entry:', error);
           toast({
@@ -70,7 +73,7 @@ const TimeTracker = () => {
           });
           return;
         }
-        
+
         if (data) {
           setCurrentTimeEntry(data);
           storeClockIn(data.project_id, data.jobs.code);
@@ -88,28 +91,28 @@ const TimeTracker = () => {
         setLoading(false);
       }
     }
-    
+
     if (user) {
       checkActiveEntry();
     }
   }, [user, storeClockIn, toast]);
-  
+
   // Update timer for active time entry
   useEffect(() => {
     if (!currentTimeEntry) {
       setTimer(0);
       return;
     }
-    
+
     setTimer(getActiveTimer());
-    
+
     const interval = setInterval(() => {
       setTimer(getActiveTimer());
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, [currentTimeEntry, getActiveTimer]);
-  
+
   const handleClockInOut = async () => {
     if (!user) {
       toast({
@@ -119,15 +122,15 @@ const TimeTracker = () => {
       });
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       if (currentTimeEntry) {
         console.log('Clocking out:', currentTimeEntry);
         // Clock Out Logic
         const now = new Date().toISOString();
-        
+
         // Update time entry
         const { error: updateError } = await supabase
           .from('time_entries')
@@ -137,9 +140,9 @@ const TimeTracker = () => {
           })
           .eq('id', currentTimeEntry.id)
           .eq('user_id', user.id); // Add user_id check for security
-          
+
         if (updateError) throw updateError;
-        
+
         // Create daily summary entry
         const { error: summaryError } = await supabase
           .from('daily_summaries')
@@ -155,14 +158,14 @@ const TimeTracker = () => {
             created_at: now
           })
           .select();
-          
+
         if (summaryError) throw summaryError;
-        
+
         setCurrentTimeEntry(null);
         await storeClockOut();
         setSelectedProject('');
         setJobCode('');
-        
+
         toast({
           title: "Clocked Out Successfully",
           description: "You have been clocked out. You can now clock in again.",
@@ -189,7 +192,7 @@ const TimeTracker = () => {
           jobCode: jobCode.trim(),
           timestamp: new Date().toISOString()
         });
-        
+
         // Validate job code
         const validationError = await validateJobCode(selectedProject, jobCode);
         if (validationError) {
@@ -201,118 +204,69 @@ const TimeTracker = () => {
           setLoading(false);
           return;
         }
-        
-        // Get job_id with case-insensitive comparison
-        const { data: jobData, error: jobError } = await supabase
-          .from('jobs')
-          .select('id, code')
-          .ilike('code', jobCode.trim())
-          .eq('is_active', true)
-          .single();
-          
-        if (jobError) {
-          console.error('Error fetching job:', jobError);
-          throw new Error('Could not find job code. Please try again.');
-        }
-        
-        if (!jobData) {
-          toast({
-            title: "Invalid Job Code",
-            description: "Could not find the specified job code for this project.",
-            variant: "destructive"
-          });
-          setLoading(false);
-          return;
-        }
+      }
 
-        console.log('Found job for clock in:', {
-          jobId: jobData.id,
-          jobCode: jobData.code
-        });
-        
-        // Create time entry
-        console.log('Creating time entry:', {
-          user_id: user.id,
-          project_id: selectedProject,
-          job_id: jobData.id,
-          clock_in: new Date().toISOString(),
-          is_complete: false
-        });
-        const { data: entryData, error: entryError } = await supabase
-          .from('time_entries')
-          .insert({
-            user_id: user.id,
-            project_id: selectedProject,
-            job_id: jobData.id,
-            clock_in: new Date().toISOString(),
-            is_complete: false
-          })
-          .select(`
-            id,
-            user_id,
-            project_id,
-            job_id,
-            clock_in,
-            is_complete,
-            jobs!inner (
-              code
-            )
-          `)
-          .single();
+      const jobData = await fetchActiveJobByCode(jobCode);
 
-        console.log('Time entry created:', entryData);
-        if (entryError) {
-          console.error('Error creating time entry:', entryError);
-          if (entryError.code === '42P01') {
-            toast({
-              title: "Database Error",
-              description: "There was an issue with the database policy. Please contact support.",
-              variant: "destructive"
-            });
-          } else {
-            throw entryError;
-          }
-          return;
-        }
-        
-        if (!entryData) {
-          throw new Error('No data returned from time entry creation');
-        }
+      console.log('Found job for clock in:', {
+        jobId: jobData.id,
+        jobCode: jobData.code
+      });
 
-        console.log('Successfully created time entry:', {
-          entryId: entryData.id,
-          projectId: entryData.project_id,
-          jobCode: entryData.jobs.code
-        });
-        
-        setCurrentTimeEntry(entryData as TimeEntry);
-        storeClockIn(selectedProject, jobCode);
-        
+      const entryData = await createTimeEntry({
+        userId: user.id,
+        projectId: selectedProject,
+        jobId: jobData.id
+      });
+
+      console.log('Time entry created:', entryData);
+
+      const completeTimeEntry: TimeEntry = {
+        ...entryData,
+        jobs: { code: jobData.code }  // Assuming you're extending type for display
+      };
+
+      setCurrentTimeEntry(completeTimeEntry);
+      storeClockIn(selectedProject, jobData.code);
+
+      toast({
+        title: "Clocked In Successfully",
+        description: "Time tracking has started. You can now clock out when needed.",
+        duration: 3000
+      });
+
+    } catch (err: any) {
+      if (err.message === 'Invalid Job Code') {
         toast({
-          title: "Clocked In Successfully",
-          description: "Time tracking has started. You can now clock out when needed.",
-          duration: 3000
+          title: "Invalid Job Code",
+          description: "Could not find the specified job code for this project.",
+          variant: "destructive"
+        });
+      } else if (err.code === '42P01' || err.code === '42P17') {
+        toast({
+          title: "Database Error",
+          description: "There was an issue with the database policy. Please contact support.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Clock In Failed",
+          description: err.message || "Something went wrong. Please try again.",
+          variant: "destructive"
         });
       }
-    } catch (error) {
-      console.error('Error during clock in/out:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
-        variant: "destructive"
-      });
     } finally {
       setLoading(false);
     }
-  };
-  
+  }; // Added missing closing brace for try-catch-finally
+
   return (
     <div className="bg-white p-5 rounded-lg shadow">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">Time Tracker</h2>
         <div className="text-2xl font-mono">{formatTimeDisplay(timer)}</div>
       </div>
-      
+
       <div className="space-y-4">
         <div>
           <label htmlFor="project" className="block text-sm font-medium mb-1">
@@ -326,7 +280,7 @@ const TimeTracker = () => {
               setJobCode(''); // Clear job code when project changes
             }}
           >
-            <SelectTrigger 
+            <SelectTrigger
               className={cn(
                 "transition-colors duration-200",
                 currentTimeEntry ? "bg-gray-100 cursor-not-allowed" : "bg-white hover:bg-gray-50"
@@ -343,12 +297,12 @@ const TimeTracker = () => {
             </SelectContent>
           </Select>
         </div>
-        
+
         <div>
           <label htmlFor="jobCode" className="block text-sm font-medium mb-1">
             Enter Job Code
           </label>
-          <Input 
+          <Input
             id="jobCode"
             placeholder="Enter job code"
             value={jobCode}
@@ -356,9 +310,9 @@ const TimeTracker = () => {
             disabled={!!currentTimeEntry || loading || !selectedProject} // Disable if no project selected
             className={cn(
               "transition-colors duration-200",
-              currentTimeEntry ? "bg-gray-100 cursor-not-allowed" : 
-              !selectedProject ? "bg-gray-50 cursor-not-allowed" :
-              "bg-white hover:bg-gray-50"
+              currentTimeEntry ? "bg-gray-100 cursor-not-allowed" :
+                !selectedProject ? "bg-gray-50 cursor-not-allowed" :
+                  "bg-white hover:bg-gray-50"
             )}
           />
           {selectedProject && jobs.length > 0 && !currentTimeEntry && (
@@ -367,18 +321,18 @@ const TimeTracker = () => {
             </div>
           )}
         </div>
-        
+
         <Button
           className={cn(
             "w-full py-6 transition-colors duration-200",
-            currentTimeEntry 
-              ? "bg-red-500 hover:bg-red-600 text-white" 
+            currentTimeEntry
+              ? "bg-red-500 hover:bg-red-600 text-white"
               : "bg-emerald-500 hover:bg-emerald-600 text-white"
           )}
           onClick={handleClockInOut}
           disabled={
-            loading || 
-            jobLoading || 
+            loading ||
+            jobLoading ||
             (!currentTimeEntry && (!selectedProject || !jobCode)) ||
             (!currentTimeEntry && !selectedProject)
           }
@@ -386,9 +340,9 @@ const TimeTracker = () => {
           <Clock className="mr-2 h-5 w-5" />
           {loading ? 'Processing...' : currentTimeEntry ? 'Clock Out' : 'Clock In'}
         </Button>
-        
+
         {currentTimeEntry && (
-          <BreakTimer 
+          <BreakTimer
             timeEntryId={currentTimeEntry.id}
             disabled={loading}
           />
