@@ -1,119 +1,97 @@
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { TimeEntry, Project, WeeklySummary } from './types';
-import { calculateWeeklySummary, calculateTodayHours } from './timeUtils';
-import { mockProjects, generateMockTimeEntries } from './mockData';
+import { Project, TimeEntry, Job } from './types';
+import { SAMPLE_PROJECTS, SAMPLE_JOBS, SAMPLE_TIME_ENTRIES } from './mockData';
 
-interface TimeState {
-  // Data
+type TimeTrackingState = {
   projects: Project[];
+  jobs: Record<string, Job[]>;
   timeEntries: TimeEntry[];
-  activeEntry: TimeEntry | null;
-  currentWeekDate: Date;
+  activeTimeEntry: TimeEntry | null;
+  selectedProjectId: string | null;
+  selectedJobId: string | null;
+  loading: boolean;
+  error: string | null;
   
-  // Actions
-  addProject: (project: Project) => void;
-  clockIn: (projectId: string, jobCode: string) => void;
-  clockOut: () => void;
-  deleteTimeEntry: (id: string) => void;
-  updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
-  setCurrentWeekDate: (date: Date) => void;
+  // Project actions
+  setProjects: (projects: Project[]) => void;
+  setJobs: (projectId: string, jobs: Job[]) => void;
+  selectProject: (projectId: string) => void;
+  selectJob: (jobId: string) => void;
   
-  // Computed data
-  getActiveTimer: () => number;
-  getWeeklySummary: () => WeeklySummary;
-  getTodayHours: () => number;
-}
+  // Time tracking actions
+  startTimeEntry: () => void;
+  stopTimeEntry: (entryId: string) => void;
+  setActiveTimeEntry: (entry: TimeEntry | null) => void;
+  
+  // Loading & error state
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+};
 
-export const useTimeStore = create<TimeState>()(
-  persist(
-    (set, get) => ({
-      // Initial state
-      projects: mockProjects,
-      timeEntries: generateMockTimeEntries(),
-      activeEntry: null,
-      currentWeekDate: new Date(),
-      
-      // Actions
-      addProject: (project) => {
-        set((state) => ({
-          projects: [...state.projects, project]
-        }));
-      },
-      
-      clockIn: (projectId, jobCode) => {
-        const newEntry: TimeEntry = {
-          id: `entry-${Date.now()}`,
-          projectId,
-          jobCode,
-          clockInTime: new Date(),
-          clockOutTime: null,
-        };
-        
-        set((state) => ({
-          activeEntry: newEntry,
-          timeEntries: [...state.timeEntries, newEntry]
-        }));
-      },
-      
-      clockOut: () => {
-        const { activeEntry, timeEntries } = get();
-        
-        if (!activeEntry) return;
-        
-        const updatedEntries = timeEntries.map((entry) => 
-          entry.id === activeEntry.id
-            ? { ...entry, clockOutTime: new Date() }
-            : entry
-        );
-        
-        set({
-          activeEntry: null,
-          timeEntries: updatedEntries
-        });
-      },
-      
-      deleteTimeEntry: (id) => {
-        set((state) => ({
-          timeEntries: state.timeEntries.filter((entry) => entry.id !== id)
-        }));
-      },
-      
-      updateTimeEntry: (id, updates) => {
-        set((state) => ({
-          timeEntries: state.timeEntries.map((entry) => 
-            entry.id === id ? { ...entry, ...updates } : entry
-          )
-        }));
-      },
-      
-      setCurrentWeekDate: (date) => {
-        set({ currentWeekDate: date });
-      },
-      
-      // Computed values
-      getActiveTimer: () => {
-        const { activeEntry } = get();
-        
-        if (!activeEntry) return 0;
-        
-        const elapsed = Math.floor((new Date().getTime() - activeEntry.clockInTime.getTime()) / 1000);
-        return elapsed;
-      },
-      
-      getWeeklySummary: () => {
-        const { timeEntries, currentWeekDate } = get();
-        return calculateWeeklySummary(timeEntries, currentWeekDate);
-      },
-      
-      getTodayHours: () => {
-        const { timeEntries } = get();
-        return calculateTodayHours(timeEntries);
-      },
-    }),
-    {
-      name: 'clockwise-time-storage',
+export const useTimeStore = create<TimeTrackingState>((set, get) => ({
+  projects: SAMPLE_PROJECTS,
+  jobs: SAMPLE_JOBS,
+  timeEntries: SAMPLE_TIME_ENTRIES,
+  activeTimeEntry: SAMPLE_TIME_ENTRIES.find(entry => entry.clockOutTime === null) || null,
+  selectedProjectId: null,
+  selectedJobId: null,
+  loading: false,
+  error: null,
+  
+  // Project actions
+  setProjects: (projects) => set({ projects }),
+  setJobs: (projectId, jobs) => set((state) => ({ 
+    jobs: { ...state.jobs, [projectId]: jobs } 
+  })),
+  selectProject: (projectId) => set({ 
+    selectedProjectId: projectId,
+    selectedJobId: null
+  }),
+  selectJob: (jobId) => set({ selectedJobId: jobId }),
+  
+  // Time tracking actions
+  startTimeEntry: () => {
+    const { selectedProjectId, selectedJobId, jobs } = get();
+    
+    if (!selectedProjectId || !selectedJobId) {
+      set({ error: "Please select a project and job" });
+      return;
     }
-  )
-);
+    
+    const jobCode = 
+      jobs[selectedProjectId]?.find(j => j.id === selectedJobId)?.code || "";
+    
+    const newEntry: TimeEntry = {
+      id: `entry-${Date.now()}`,
+      projectId: selectedProjectId,
+      jobId: selectedJobId,
+      jobCode: jobCode,
+      clockInTime: new Date(),
+      clockOutTime: null
+    };
+    
+    set((state) => ({
+      timeEntries: [...state.timeEntries, newEntry],
+      activeTimeEntry: newEntry,
+      error: null
+    }));
+  },
+  
+  stopTimeEntry: (entryId) => {
+    set((state) => ({
+      timeEntries: state.timeEntries.map(entry => 
+        entry.id === entryId
+          ? { ...entry, clockOutTime: new Date() }
+          : entry
+      ),
+      activeTimeEntry: null
+    }));
+  },
+  
+  setActiveTimeEntry: (entry) => set({ activeTimeEntry: entry }),
+  
+  // Loading & error state
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error })
+}));
