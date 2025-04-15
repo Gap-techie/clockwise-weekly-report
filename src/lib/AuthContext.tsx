@@ -67,44 +67,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signUp = async (email: string, password: string, fullName: string) => {
     console.log('Attempting to sign up:', email);
     
-    // Use signUp with metadata for the profile
-    const { data, error } = await supabase.auth.signUp({ 
-      email, 
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
-      }
-    });
-    
-    if (error) {
-      console.error('Sign up error:', error.message);
-      toast({
-        title: "Sign up failed",
-        description: error.message,
-        variant: "destructive"
-      });
-    } else {
-      console.log('Sign up response:', data);
-      
-      // Create profile manually if needed
-      try {
-        if (data?.user) {
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .insert({
-              id: data.user.id,
-              email: email,
-              full_name: fullName
-            });
-            
-          if (profileError) {
-            console.error('Error creating profile:', profileError);
-          }
+    try {
+      // Use signUp with metadata for the profile
+      const { data, error } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          data: { full_name: fullName },
+          emailRedirectTo: window.location.origin,
         }
-      } catch (profileErr) {
-        console.error('Profile creation error:', profileErr);
+      });
+      
+      if (error) {
+        console.error('Sign up error:', error.message);
+        toast({
+          title: "Sign up failed",
+          description: error.message,
+          variant: "destructive"
+        });
+        return { error, data };
       }
+      
+      console.log('Sign up response:', data);
       
       // Check if email confirmation is needed
       if (data?.user?.identities?.length === 0) {
@@ -126,9 +110,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           description: "Please check your email to confirm your account.",
         });
       }
+      
+      return { error: null, data };
+    } catch (err: any) {
+      console.error('Unexpected sign up error:', err);
+      toast({
+        title: "Sign up failed",
+        description: err.message || "An unexpected error occurred",
+        variant: "destructive"
+      });
+      return { error: err, data: null };
     }
-    
-    return { error, data };
   };
 
   const signOut = async () => {

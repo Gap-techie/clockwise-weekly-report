@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/components/ui/use-toast';
+import { Loader2 } from 'lucide-react';
 
 interface SignUpProps {
   email: string;
@@ -128,7 +129,12 @@ const SignUp = ({ email, setEmail, authMessage, setAuthMessage, onEmailSent }: S
         />
       </div>
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? 'Creating account...' : 'Sign Up'}
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Creating account...
+          </>
+        ) : 'Sign Up'}
       </Button>
     </form>
   );
