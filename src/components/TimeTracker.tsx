@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
 import BreakTimer from './BreakTimer';
 
 interface Project {
@@ -37,6 +38,39 @@ interface TimeEntry {
   notes?: string;
 }
 
+
+const fetchProjects = async (user) => {
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, name, description, is_active')
+    .eq('is_active', true)
+    .order('name');
+
+  if (error) throw error;
+
+  return data || [];
+};
+
+
+function useProjects(user, toast) {
+  return useQuery({
+    queryKey: ['projects', user?.id], // using user id ensures refetch on user change
+    queryFn: () => fetchProjects(user),
+    enabled: !!user, // don't run the query if user is not available
+    onError: (error) => {
+      console.error('Error fetching projects:', error);
+      toast({
+        title: "Error loading projects",
+        description: "Please try again later",
+        variant: "destructive"
+      });
+    },
+    staleTime: 5 * 60 * 1000, // optional: avoid frequent refetches for 5 min
+  });
+}
+
 const TimeTracker = () => {
   const { 
     activeEntry,
@@ -49,43 +83,13 @@ const TimeTracker = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [jobLoading, setJobLoading] = useState(false);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [jobCode, setJobCode] = useState<string>('');
   const [timer, setTimer] = useState(0);
   const [currentTimeEntry, setCurrentTimeEntry] = useState<TimeEntry | null>(null);
 
-  // Fetch active projects from database
-  useEffect(() => {
-    async function fetchProjects() {
-      if (!user) return;
-      
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('projects')
-          .select('id, name, description, is_active')
-          .eq('is_active', true)
-          .order('name');
-          
-        if (error) throw error;
-        
-        setProjects(data || []);
-      } catch (error) {
-        console.error('Error fetching projects:', error);
-        toast({
-          title: "Error loading projects",
-          description: "Please try again later",
-          variant: "destructive"
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-    
-    fetchProjects();
-  }, [user, toast]);
+  const { data: projects = [], isLoading } = useProjects(user, toast);
 
   // Fetch jobs when project is selected
   useEffect(() => {
