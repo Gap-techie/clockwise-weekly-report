@@ -33,8 +33,25 @@ export async function getProjects(): Promise<Project[]> {
   }));
 }
 
+// Job Functions
+export async function getJobsByProject(projectId: string) {
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('is_active', true)
+    .order('code');
+    
+  if (error) throw error;
+  return data.map(job => ({
+    id: job.id,
+    code: job.code,
+    title: job.title || job.code
+  }));
+}
+
 // Time Tracking Functions
-export async function clockIn(userId: string, projectId: string, jobCode: string): Promise<TimeEntry> {
+export async function clockIn(userId: string, projectId: string, jobId: string): Promise<TimeEntry> {
   // First check if there's already an active time entry
   const { data: activeEntries } = await supabase
     .from('time_entries')
@@ -52,7 +69,7 @@ export async function clockIn(userId: string, projectId: string, jobCode: string
     .insert({
       user_id: userId,
       project_id: projectId,
-      job_code: jobCode,
+      job_id: jobId,
       clock_in: new Date().toISOString(),
       is_complete: false
     })
@@ -61,10 +78,18 @@ export async function clockIn(userId: string, projectId: string, jobCode: string
     
   if (error) throw error;
   
+  // Get job code for the returned entry
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('code')
+    .eq('id', data.job_id)
+    .single();
+  
   return {
     id: data.id,
     projectId: data.project_id,
-    jobCode: data.job_code,
+    jobId: data.job_id,
+    jobCode: job?.code || '',
     clockInTime: new Date(data.clock_in),
     clockOutTime: null
   };
@@ -83,10 +108,18 @@ export async function clockOut(timeEntryId: string): Promise<TimeEntry> {
     
   if (error) throw error;
   
+  // Get job code for the returned entry
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('code')
+    .eq('id', data.job_id)
+    .single();
+  
   return {
     id: data.id,
     projectId: data.project_id,
-    jobCode: data.job_code,
+    jobId: data.job_id,
+    jobCode: job?.code || '',
     clockInTime: new Date(data.clock_in),
     clockOutTime: new Date(data.clock_out)
   };
@@ -108,10 +141,18 @@ export async function getActiveTimeEntry(userId: string): Promise<TimeEntry | nu
     throw error;
   }
   
+  // Get job code for the returned entry
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('code')
+    .eq('id', data.job_id)
+    .single();
+  
   return {
     id: data.id,
     projectId: data.project_id,
-    jobCode: data.job_code,
+    jobId: data.job_id,
+    jobCode: job?.code || '',
     clockInTime: new Date(data.clock_in),
     clockOutTime: null
   };

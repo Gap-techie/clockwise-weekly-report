@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabaseClient';
 const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [authMessage, setAuthMessage] = useState<{type: 'error' | 'info' | 'success', message: string} | null>(null);
@@ -62,16 +63,6 @@ const Auth = () => {
           type: 'error',
           message: error.message || 'Error signing in'
         });
-        toast({
-          title: 'Error signing in',
-          description: error.message,
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Welcome back!',
-          description: 'You have successfully signed in.',
-        });
       }
     } catch (error: any) {
       toast({
@@ -90,21 +81,25 @@ const Auth = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!fullName.trim()) {
+      setAuthMessage({
+        type: 'error',
+        message: 'Please enter your full name'
+      });
+      return;
+    }
+    
     setAuthMessage(null);
     setIsLoading(true);
     
     try {
-      const { error, data } = await signUp(email, password);
+      const { error, data } = await signUp(email, password, fullName);
       
       if (error) {
         setAuthMessage({
           type: 'error',
           message: error.message || 'Error signing up'
-        });
-        toast({
-          title: 'Error signing up',
-          description: error.message,
-          variant: 'destructive',
         });
         
         // If the error suggests the user already exists, show helpful message
@@ -126,10 +121,6 @@ const Auth = () => {
         setAuthMessage({
           type: 'success',
           message: 'Please check your email to confirm your account.'
-        });
-        toast({
-          title: 'Success!',
-          description: 'Please check your email to confirm your account.',
         });
       }
     } catch (error: any) {
@@ -223,6 +214,17 @@ const Auth = () => {
               
               <TabsContent value="signup">
                 <form onSubmit={handleSignUp} className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="fullName" className="text-sm font-medium">Full Name</label>
+                    <Input
+                      id="fullName"
+                      type="text"
+                      placeholder="John Doe"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
+                    />
+                  </div>
                   <div className="space-y-2">
                     <label htmlFor="signup-email" className="text-sm font-medium">Email</label>
                     <Input

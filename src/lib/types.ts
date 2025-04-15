@@ -2,6 +2,7 @@
 export interface TimeEntry {
   id: string;
   projectId: string;
+  jobId: string;
   jobCode: string;
   clockInTime: Date;
   clockOutTime: Date | null;
@@ -10,6 +11,12 @@ export interface TimeEntry {
 export interface Project {
   id: string;
   name: string;
+}
+
+export interface Job {
+  id: string;
+  code: string;
+  title: string;
 }
 
 export interface WeeklyTimeData {

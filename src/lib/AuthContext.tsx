@@ -3,13 +3,14 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Session, User } from '@supabase/supabase-js';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast';
 
 type AuthContextType = {
   session: Session | null;
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string) => Promise<{ error: any, data: any }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any, data: any }>;
   signOut: () => Promise<void>;
 };
 
@@ -20,6 +21,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     // Set up auth state listener first
@@ -49,6 +51,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     if (error) {
       console.error('Sign in error:', error.message);
+      toast({
+        title: "Sign in failed",
+        description: error.message,
+        variant: "destructive"
+      });
     } else {
       console.log('Sign in successful');
       navigate('/');
@@ -57,22 +64,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return { error };
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, fullName: string) => {
     console.log('Attempting to sign up:', email);
     
-    // Use signUp with email confirmation disabled
+    // Use signUp with metadata for the profile
     const { data, error } = await supabase.auth.signUp({ 
       email, 
       password,
       options: {
+        data: { full_name: fullName },
         emailRedirectTo: window.location.origin,
       }
     });
     
     if (error) {
       console.error('Sign up error:', error.message);
+      toast({
+        title: "Sign up failed",
+        description: error.message,
+        variant: "destructive"
+      });
     } else {
       console.log('Sign up response:', data);
+      
+      // Create profile manually if needed
+      try {
+        if (data?.user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert({
+              id: data.user.id,
+              email: email,
+              full_name: fullName
+            });
+            
+          if (profileError) {
+            console.error('Error creating profile:', profileError);
+          }
+        }
+      } catch (profileErr) {
+        console.error('Profile creation error:', profileErr);
+      }
       
       // Check if email confirmation is needed
       if (data?.user?.identities?.length === 0) {
@@ -83,7 +115,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // If auto-confirmation is enabled (development setting), this will work right away
       if (data?.user?.confirmed_at) {
         console.log('Sign up successful with auto-confirmation');
+        toast({
+          title: "Account created",
+          description: "You've been automatically signed in.",
+        });
         navigate('/');
+      } else {
+        toast({
+          title: "Verification needed",
+          description: "Please check your email to confirm your account.",
+        });
       }
     }
     
