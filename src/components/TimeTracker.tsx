@@ -15,9 +15,17 @@ import { useJobs } from '../hooks/queries/useJobs';
 import validateJobCode from '@/utils/validateJobCode';
 import { TimeEntry } from '@/types/timeTracker';
 import { fetchActiveJobByCode } from '@/lib/supabase/jobs';
-import { createTimeEntry } from '@/lib/supabase/timeEntries';
+import { createTimeEntry, createDailySummary } from '@/lib/supabase/timeEntries';
 
+interface Project {
+  id: string;
+  name: string;
+}
 
+interface Job {
+  id: string;
+  code: string;
+}
 
 const TimeTracker = () => {
   const {
@@ -36,8 +44,8 @@ const TimeTracker = () => {
   const [timer, setTimer] = useState(0);
   const [currentTimeEntry, setCurrentTimeEntry] = useState<TimeEntry | null>(null);
 
-  const { data: projects = [], isLoading: isProjectLoading } = useProjects(user, toast);
-  const { data: jobs = [], isLoading: isJobLoading } = useJobs(selectedProject, toast);
+  const { data: projects = [], isLoading: isProjectLoading } = useProjects(user, toast) as { data: Project[], isLoading: boolean };
+  const { data: jobs = [], isLoading: isJobLoading } = useJobs(selectedProject, toast) as { data: Job[], isLoading: boolean };
 
   // Check for active time entry
   useEffect(() => {
@@ -128,49 +136,64 @@ const TimeTracker = () => {
     try {
       if (currentTimeEntry) {
         console.log('Clocking out:', currentTimeEntry);
-        // Clock Out Logic
-        const now = new Date().toISOString();
+        setLoading(true);
+        
+        try {
+          // Clock Out Logic
+          const now = new Date().toISOString();
+          const today = now.split('T')[0];
 
-        // Update time entry
-        const { error: updateError } = await supabase
-          .from('time_entries')
-          .update({
-            clock_out: now,
-            is_complete: true
-          })
-          .eq('id', currentTimeEntry.id)
-          .eq('user_id', user.id); // Add user_id check for security
+          // First update the time entry
+          const { error: updateError } = await supabase
+            .from('time_entries')
+            .update({
+              clock_out: now,
+              is_complete: true
+            })
+            .eq('id', currentTimeEntry.id)
+            .eq('user_id', user.id);
 
-        if (updateError) throw updateError;
+          if (updateError) throw updateError;
 
-        // Create daily summary entry
-        const { error: summaryError } = await supabase
-          .from('daily_summaries')
-          .upsert({
-            user_id: user.id,
-            project_id: currentTimeEntry.project_id,
-            job_id: currentTimeEntry.job_id,
-            date: now.split('T')[0],
-            day_of_week: new Date().getDay(),
-            regular_hours: timer / 3600,
-            overtime_hours: 0,
-            total_hours: timer / 3600,
-            created_at: now
-          })
-          .select();
+          // Calculate hours properly
+          const clockInTime = new Date(currentTimeEntry.clock_in).getTime();
+          const clockOutTime = new Date(now).getTime();
+          const totalHours = (clockOutTime - clockInTime) / (1000 * 60 * 60);
+          const regularHours = Math.min(totalHours, 8);
+          const overtimeHours = Math.max(0, totalHours - 8);
 
-        if (summaryError) throw summaryError;
+          // Create or update daily summary
+          await createDailySummary({
+            userId: user.id,
+            projectId: currentTimeEntry.project_id,
+            jobId: currentTimeEntry.job_id,
+            regularHours: Number(regularHours.toFixed(2)),
+            overtimeHours: Number(overtimeHours.toFixed(2)),
+            totalHours: Number(totalHours.toFixed(2)),
+            date: today
+          });
 
-        setCurrentTimeEntry(null);
-        await storeClockOut();
-        setSelectedProject('');
-        setJobCode('');
+          // Update local state
+          await storeClockOut();
+          setCurrentTimeEntry(null);
+          setSelectedProject('');
+          setJobCode('');
 
-        toast({
-          title: "Clocked Out Successfully",
-          description: "You have been clocked out. You can now clock in again.",
-          duration: 3000
-        });
+          toast({
+            title: "Clocked Out Successfully",
+            description: "You have been clocked out. You can now clock in again.",
+            duration: 3000
+          });
+        } catch (err: any) {
+          console.error('Error in clock out process:', err);
+          toast({
+            title: "Clock Out Error",
+            description: err.message || "There was an error clocking out. Please try again.",
+            variant: "destructive"
+          });
+        } finally {
+          setLoading(false);
+        }
       } else {
         console.log('Clocking inxxxx:', {
           selectedProject,
@@ -258,7 +281,7 @@ const TimeTracker = () => {
     } finally {
       setLoading(false);
     }
-  }; // Added missing closing brace for try-catch-finally
+  };
 
   return (
     <div className="bg-white p-5 rounded-lg shadow">
