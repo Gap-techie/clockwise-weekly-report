@@ -8,15 +8,26 @@ import ActivityLog from '@/components/ActivityLog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { setupWeeklyReportScheduler } from '@/components/EmailService';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/AuthContext';
 
 const Index = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [emailSetup, setEmailSetup] = useState(false);
   
   const handleSetupEmailReports = () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to set up email reports",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     // This would normally prompt for an email address
     // We're mocking this functionality
-    const email = "user@example.com";
+    const email = user.email || "user@example.com";
     
     // Set up weekly email reports
     const scheduler = setupWeeklyReportScheduler(email);
