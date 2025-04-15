@@ -99,8 +99,7 @@ const TimeTracker = () => {
         setJobLoading(true);
         const { data, error } = await supabase
           .from('jobs')
-          .select('id, code, title, project_id, is_active')
-          .eq('project_id', selectedProject)
+          .select('id, code, is_active')
           .eq('is_active', true)
           .order('code');
           
