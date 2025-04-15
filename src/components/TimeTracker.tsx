@@ -71,6 +71,44 @@ function useProjects(user, toast) {
   });
 }
 
+const fetchJobs = async (projectId) => {
+  if (!projectId) return [];
+
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id, code, is_active')
+    .eq('is_active', true)
+    .order('code');
+
+  if (error) {
+    console.error('Error fetching jobs:', error);
+    throw error;
+  }
+
+  console.log('Fetched jobs for project:', {
+    projectId,
+    jobs: data?.map(j => j.code) || []
+  });
+
+  return data || [];
+};
+
+function useJobs(selectedProject, toast) {
+  return useQuery({
+    queryKey: ['jobs', selectedProject],
+    queryFn: () => fetchJobs(selectedProject),
+    enabled: !!selectedProject, // only run when a project is selected
+    onError: (error) => {
+      toast({
+        title: "Error loading job codes",
+        description: "Please try again later",
+        variant: "destructive",
+      });
+    },
+    staleTime: 5 * 60 * 1000, // optional: 5 minutes cache
+  });
+}
+
 const TimeTracker = () => {
   const { 
     activeEntry,
@@ -83,55 +121,16 @@ const TimeTracker = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [jobLoading, setJobLoading] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [jobCode, setJobCode] = useState<string>('');
   const [timer, setTimer] = useState(0);
   const [currentTimeEntry, setCurrentTimeEntry] = useState<TimeEntry | null>(null);
 
-  const { data: projects = [], isLoading } = useProjects(user, toast);
-
-  // Fetch jobs when project is selected
-  useEffect(() => {
-    async function fetchJobs() {
-      if (!selectedProject) {
-        setJobs([]);
-        return;
-      }
-      
-      try {
-        setJobLoading(true);
-        const { data, error } = await supabase
-          .from('jobs')
-          .select('id, code, is_active')
-          .eq('is_active', true)
-          .order('code');
-          
-        if (error) {
-          console.error('Error fetching jobs:', error);
-          throw error;
-        }
-        
-        console.log('Fetched jobs for project:', {
-          projectId: selectedProject,
-          jobs: data?.map(j => j.code) || []
-        });
-        
-        setJobs(data || []);
-      } catch (error) {
-        console.error('Error fetching jobs:', error);
-        toast({
-          title: "Error loading job codes",
-          description: "Please try again later",
-          variant: "destructive"
-        });
-      } finally {
-        setJobLoading(false);
-      }
-    }
-    
-    fetchJobs();
-  }, [selectedProject, toast]);
+  const { data: projects = [], isLoading: isProjectLoading } = useProjects(user, toast);
+  const {
+    data: jobs = [],
+    isLoading: isJobLoading
+  } = useJobs(selectedProject, toast);
   
   // Check for active time entry
   useEffect(() => {
