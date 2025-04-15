@@ -13,31 +13,8 @@ import { useQuery } from '@tanstack/react-query';
 import BreakTimer from './BreakTimer';
 import useProjects from '../hooks/queries/useProjects';
 import { useJobs } from '../hooks/queries/useJobs';
-interface Project {
-  id: string;
-  name: string;
-  description?: string;
-  is_active: boolean;
-}
-
-interface Job {
-  id: string;
-  code: string;
-  title: string;
-  project_id: string;
-  is_active: boolean;
-}
-
-interface TimeEntry {
-  id: string;
-  user_id: string;
-  project_id: string;
-  job_id: string;
-  clock_in: string;
-  clock_out?: string;
-  is_complete: boolean;
-  notes?: string;
-}
+import validateJobCode from '@/utils/validateJobCode';
+import { TimeEntry } from '@/types/timeTracker';
 
 
 const TimeTracker = () => {
@@ -58,10 +35,7 @@ const TimeTracker = () => {
   const [currentTimeEntry, setCurrentTimeEntry] = useState<TimeEntry | null>(null);
 
   const { data: projects = [], isLoading: isProjectLoading } = useProjects(user, toast);
-  const {
-    data: jobs = [],
-    isLoading: isJobLoading
-  } = useJobs(selectedProject, toast);
+  const { data: jobs = [], isLoading: isJobLoading } = useJobs(selectedProject, toast);
   
   // Check for active time entry
   useEffect(() => {
@@ -135,75 +109,6 @@ const TimeTracker = () => {
     
     return () => clearInterval(interval);
   }, [currentTimeEntry, getActiveTimer]);
-  
-  // Validate job code against database
-  const validateJobCode = async (projectId: string, code: string): Promise<string | null> => {
-    try {
-      setJobLoading(true);
-      
-      if (!code.trim()) {
-        return "Job code is required";
-      }
-
-      // Log the input values
-      console.log('Validating job code:', {
-        projectId,
-        code: code.trim(),
-        timestamp: new Date().toISOString()
-      });
-      
-      // First, let's check what jobs are available for this project
-      const { data: availableJobs, error: jobsError } = await supabase
-        .from('jobs')
-        .select('id, code')
-        .eq('is_active', true);
-
-      if (jobsError) {
-        console.error('Error fetching available jobs:', jobsError);
-        throw jobsError;
-      }
-
-      console.log('Available jobs for project:', {
-        projectId,
-        jobs: availableJobs?.map(j => j.code) || []
-      });
-      
-      // Now check for the specific job code
-      const { data, error } = await supabase
-        .from('jobs')
-        .select('id, code, title')
-        .ilike('code', code.trim()) // Case insensitive comparison
-        .eq('is_active', true)
-        .maybeSingle();
-        
-      if (error) {
-        console.error('Database error during job code validation:', error);
-        throw error;
-      }
-      
-      // Log the validation result
-      console.log('Job code validation result:', {
-        projectId,
-        searchedCode: code.trim(),
-        found: !!data,
-        matchedJob: data
-      });
-      
-      if (!data) {
-        // Log available codes for debugging
-        const availableCodes = availableJobs?.map(j => j.code).join(', ') || 'none';
-        console.log(`No matching job code found. Available codes: ${availableCodes}`);
-        return `Invalid job code. Available codes: ${availableCodes}`;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error validating job code:', error);
-      return "Error validating job code. Please try again.";
-    } finally {
-      setJobLoading(false);
-    }
-  };
   
   const handleClockInOut = async () => {
     if (!user) {
