@@ -16,6 +16,7 @@ import validateJobCode from '@/utils/validateJobCode';
 import { TimeEntry } from '@/types/timeTracker';
 import { fetchActiveJobByCode } from '@/lib/supabase/jobs';
 import { createTimeEntry, createDailySummary } from '@/lib/supabase/timeEntries';
+import type { User } from '@supabase/supabase-js';
 
 interface Project {
   id: string;
@@ -135,96 +136,107 @@ const TimeTracker = () => {
 
     try {
       if (currentTimeEntry) {
-        // Clock Out Logic
-        console.log('Clocking out:', currentTimeEntry);
-        const now = new Date().toISOString();
-        const today = now.split('T')[0];
-
-        // First update the time entry
-        const { error: updateError } = await supabase
-          .from('time_entries')
-          .update({
-            clock_out: now,
-            is_complete: true
-          })
-          .eq('id', currentTimeEntry.id)
-          .eq('user_id', user.id);
-
-        if (updateError) throw updateError;
-
-        // Calculate hours properly
-        const { regularHours, overtimeHours, totalHours } = calculateWorkedHours(currentTimeEntry, now);
-
-        // Create or update daily summary
-        await dailySummarypayload(user, currentTimeEntry, regularHours, overtimeHours, totalHours, today);
-
-        // Update local state
-        await resetClockOutState(storeClockOut, setCurrentTimeEntry, setSelectedProject, setJobCode);
-
-        toast({
-          title: "Clocked Out Successfully",
-          description: "You have been clocked out. You can now clock in again.",
-          duration: 3000
-        });
-        
-        return; // Add return here to prevent continuing to clock in logic
+        await handleClockOut(user, currentTimeEntry);
+        return;
       }
 
-      handleClockIn(selectedProject, jobCode);
-
-      const jobData = await fetchActiveJobByCode(jobCode);
-      console.log('Found job for clock in:', {
-        jobId: jobData.id,
-        jobCode: jobData.code
-      });
-
-      const entryData = await createTimeEntry({
-        userId: user.id,
-        projectId: selectedProject,
-        jobId: jobData.id
-      });
-
-      console.log('Time entry created:', entryData);
-
-      const completeTimeEntry: TimeEntry = {
-        ...entryData,
-        jobs: { code: jobData.code }
-      };
-
-      setCurrentTimeEntry(completeTimeEntry);
-      await storeClockIn(selectedProject, jobData.code);
-
-      toast({
-        title: "Clocked In Successfully",
-        description: "Time tracking has started. You can now clock out when needed.",
-        duration: 3000
-      });
-
+      await handleClockIn(user, selectedProject, jobCode);
     } catch (err: any) {
-      console.error('Error in clock in/out process:', err);
-      if (err.message === 'Invalid Job Code') {
-        toast({
-          title: "Invalid Job Code",
-          description: "Could not find the specified job code for this project.",
-          variant: "destructive"
-        });
-      } else if (err.code === '42P01' || err.code === '42P17') {
-        toast({
-          title: "Database Error",
-          description: "There was an issue with the database policy. Please contact support.",
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "Operation Failed",
-          description: err.message || "Something went wrong. Please try again.",
-          variant: "destructive"
-        });
-      }
+      handleClockError(err);
     } finally {
       setLoading(false);
     }
   };
+  // 🔽 Clock Out Logic
+  const handleClockOut = async (user: User, entry: TimeEntry) => {
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
+
+    console.log('Clocking out:', entry);
+
+    const { error: updateError } = await supabase
+      .from('time_entries')
+      .update({ clock_out: now, is_complete: true })
+      .eq('id', entry.id)
+      .eq('user_id', user.id);
+
+    if (updateError) throw updateError;
+
+    const { regularHours, overtimeHours, totalHours } = calculateWorkedHours(entry, now);
+
+    await dailySummarypayload(user, entry, regularHours, overtimeHours, totalHours, today);
+    await resetClockOutState(storeClockOut, setCurrentTimeEntry, setSelectedProject, setJobCode);
+
+    toast({
+      title: "Clocked Out Successfully",
+      description: "You have been clocked out. You can now clock in again.",
+      duration: 3000
+    });
+  };
+
+  // 🔽 Clock In Logic
+  const handleClockIn = async (user: User, projectId: string, jobCode: string) => {
+    handleClockInAnimation(projectId, jobCode);
+
+    const jobData = await fetchActiveJobByCode(jobCode);
+    if (!jobData) throw new Error("Invalid Job Code");
+
+    console.log('Found job for clock in:', { jobId: jobData.id, jobCode: jobData.code });
+
+    const entryData = await createTimeEntry({
+      userId: user.id,
+      projectId,
+      jobId: jobData.id
+    });
+
+    console.log('Time entry created:', entryData);
+
+    const completeTimeEntry: TimeEntry = {
+      ...entryData,
+      jobs: { code: jobData.code }
+    };
+
+    setCurrentTimeEntry(completeTimeEntry);
+    await storeClockIn(projectId, jobData.code);
+
+    toast({
+      title: "Clocked In Successfully",
+      description: "Time tracking has started. You can now clock out when needed.",
+      duration: 3000
+    });
+  };
+
+  // 🔽 Optional animation/UX enhancement placeholder
+  const handleClockInAnimation = (projectId: string, jobCode: string) => {
+    // e.g., highlight UI section or start animation
+    console.log('Clocking in:', { projectId, jobCode });
+  };
+
+  // 🔽 Centralized error handler
+  const handleClockError = (err: any) => {
+    console.error('Clock In/Out Error:', err);
+
+    if (err.message === 'Invalid Job Code') {
+      toast({
+        title: "Invalid Job Code",
+        description: "Could not find the specified job code for this project.",
+        variant: "destructive"
+      });
+    } else if (err.code === '42P01' || err.code === '42P17') {
+      toast({
+        title: "Database Error",
+        description: "There was an issue with the database policy. Please contact support.",
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Operation Failed",
+        description: err.message || "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
 
   return (
     <div className="bg-white p-5 rounded-lg shadow">
