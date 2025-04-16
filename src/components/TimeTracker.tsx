@@ -153,22 +153,10 @@ const TimeTracker = () => {
         if (updateError) throw updateError;
 
         // Calculate hours properly
-        const clockInTime = new Date(currentTimeEntry.clock_in).getTime();
-        const clockOutTime = new Date(now).getTime();
-        const totalHours = (clockOutTime - clockInTime) / (1000 * 60 * 60);
-        const regularHours = Math.min(totalHours, 8);
-        const overtimeHours = Math.max(0, totalHours - 8);
+        const { regularHours, overtimeHours, totalHours } = calculateWorkedHours(currentTimeEntry, now);
 
         // Create or update daily summary
-        await createDailySummary({
-          userId: user.id,
-          projectId: currentTimeEntry.project_id,
-          jobId: currentTimeEntry.job_id,
-          regularHours: Number(regularHours.toFixed(2)),
-          overtimeHours: Number(overtimeHours.toFixed(2)),
-          totalHours: Number(totalHours.toFixed(2)),
-          date: today
-        });
+        await dailySummarypayload(user, currentTimeEntry, regularHours, overtimeHours, totalHours, today);
 
         // Update local state
         await storeClockOut();
@@ -358,3 +346,26 @@ const TimeTracker = () => {
 };
 
 export default TimeTracker;
+
+
+async function dailySummarypayload(user, currentTimeEntry: TimeEntry, regularHours: number, overtimeHours: number, totalHours: number, today: string) {
+  await createDailySummary({
+    userId: user.id,
+    projectId: currentTimeEntry.project_id,
+    jobId: currentTimeEntry.job_id,
+    regularHours: Number(regularHours.toFixed(2)),
+    overtimeHours: Number(overtimeHours.toFixed(2)),
+    totalHours: Number(totalHours.toFixed(2)),
+    date: today
+  });
+}
+
+function calculateWorkedHours(currentTimeEntry: TimeEntry, now: string) {
+  const clockInTime = new Date(currentTimeEntry.clock_in).getTime();
+  const clockOutTime = new Date(now).getTime();
+  const totalHours = (clockOutTime - clockInTime) / (1000 * 60 * 60);
+  const regularHours = Math.min(totalHours, 8);
+  const overtimeHours = Math.max(0, totalHours - 8);
+  return { regularHours, overtimeHours, totalHours };
+}
+
