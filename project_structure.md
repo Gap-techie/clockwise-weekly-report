@@ -2,6 +2,7 @@
 
 clockwise-weekly-report/
 └── clockwise-weekly-report/
+    ├── .env.local
     ├── .gitignore
     ├── README.md
     ├── bun.lockb
@@ -11,6 +12,7 @@ clockwise-weekly-report/
     ├── package-lock.json
     ├── package.json
     ├── postcss.config.js
+    ├── project_structure.md
     ├── public/
     │   ├── favicon.ico
     │   ├── placeholder.svg
@@ -85,6 +87,9 @@ clockwise-weekly-report/
     │   │       ├── tooltip.tsx
     │   │       └── use-toast.ts
     │   ├── hooks/
+    │   │   ├── queries/
+    │   │   │   ├── useJobs.ts
+    │   │   │   └── useProjects.ts
     │   │   ├── use-mobile.tsx
     │   │   └── use-toast.ts
     │   ├── index.css
@@ -94,7 +99,13 @@ clockwise-weekly-report/
     │   │       └── types.ts
     │   ├── lib/
     │   │   ├── AuthContext.tsx
+    │   │   ├── api.ts
     │   │   ├── mockData.ts
+    │   │   ├── providers.tsx
+    │   │   ├── supabase/
+    │   │   │   ├── breaks.ts
+    │   │   │   ├── jobs.ts
+    │   │   │   └── timeEntries.ts
     │   │   ├── supabaseClient.ts
     │   │   ├── timeStore.ts
     │   │   ├── timeUtils.ts
@@ -106,6 +117,10 @@ clockwise-weekly-report/
     │   │   ├── Index.tsx
     │   │   ├── NotFound.tsx
     │   │   └── Reports.tsx
+    │   ├── types/
+    │   │   └── timeTracker.ts
+    │   ├── utils/
+    │   │   └── validateJobCode.ts
     │   └── vite-env.d.ts
     ├── supabase/
     │   └── config.toml

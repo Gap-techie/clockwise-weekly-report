@@ -17,6 +17,7 @@ import { TimeEntry } from '@/types/timeTracker';
 import { fetchActiveJobByCode } from '@/lib/supabase/jobs';
 import { createTimeEntry, createDailySummary } from '@/lib/supabase/timeEntries';
 import type { User } from '@supabase/supabase-js';
+import { calculateBreakDeduction } from '@/lib/supabase/breaks';
 
 interface Project {
   id: string;
@@ -44,6 +45,7 @@ const TimeTracker = () => {
   const [jobCode, setJobCode] = useState<string>('');
   const [timer, setTimer] = useState(0);
   const [currentTimeEntry, setCurrentTimeEntry] = useState<TimeEntry | null>(null);
+  const [totalBreakMinutes, setTotalBreakMinutes] = useState(0);
 
   const { data: projects = [], isLoading: isProjectLoading } = useProjects(user, toast) as { data: Project[], isLoading: boolean };
   const { data: jobs = [], isLoading: isJobLoading } = useJobs(selectedProject, toast) as { data: Job[], isLoading: boolean };
@@ -229,6 +231,27 @@ const TimeTracker = () => {
     }
   };
 
+  // Calculate actual working hours (excluding breaks)
+  const calculateActualWorkingHours = () => {
+    if (!currentTimeEntry?.clock_in) return 0;
+    
+    const startTime = new Date(currentTimeEntry.clock_in);
+    const endTime = currentTimeEntry.clock_out ? new Date(currentTimeEntry.clock_out) : new Date();
+    
+    // Calculate total duration in minutes
+    const totalMinutes = (endTime.getTime() - startTime.getTime()) / (1000 * 60);
+    
+    // Subtract break time, but only deduct time beyond the 30-minute daily compensation
+    const deductibleBreakMinutes = Math.max(0, totalBreakMinutes - 30);
+    
+    // Convert to hours
+    return (totalMinutes - deductibleBreakMinutes) / 60;
+  };
+
+  // Handle break updates
+  const handleBreakUpdate = (breakMinutes: number) => {
+    setTotalBreakMinutes(breakMinutes);
+  };
 
   return (
     <div className="bg-white p-5 rounded-lg shadow">
@@ -314,9 +337,24 @@ const TimeTracker = () => {
         {currentTimeEntry && (
           <BreakTimer
             timeEntryId={currentTimeEntry.id}
+            isTimeEntryActive={!!currentTimeEntry && !currentTimeEntry.is_complete}
             disabled={loading}
+            userId={user.id}
+            onBreakUpdate={handleBreakUpdate}
           />
         )}
+
+        {/* Display working hours */}
+        <div className="mt-4">
+          <h3 className="text-sm font-medium text-gray-700">Working Hours Summary</h3>
+          <div className="mt-2 space-y-2 text-sm text-gray-600">
+            <p>Total Time: {calculateActualWorkingHours().toFixed(2)} hours</p>
+            <p>Total Break Time: {(totalBreakMinutes / 60).toFixed(2)} hours</p>
+            <p className="text-xs text-gray-500">
+              (30 minutes of break time compensated daily)
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

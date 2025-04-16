@@ -1,126 +1,109 @@
-
-import { useState, useEffect } from 'react';
-import { Coffee, Play, Square } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { formatTimeDisplay } from '@/lib/timeUtils';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from '@/components/ui/use-toast';
+import { startBreak, endBreak } from '@/lib/supabase/breaks';
+import { Break } from '@/types/breaks';
+import { formatDuration } from '@/lib/utils';
 
 interface BreakTimerProps {
-  timeEntryId: string | null;
-  disabled: boolean;
+  timeEntryId: string;
+  isTimeEntryActive: boolean;
+  disabled?: boolean;
+  userId: string;
+  onBreakUpdate?: (breakMinutes: number) => void;
 }
 
-const BreakTimer = ({ timeEntryId, disabled }: BreakTimerProps) => {
-  const { toast } = useToast();
-  const [breakActive, setBreakActive] = useState(false);
-  const [breakStartTime, setBreakStartTime] = useState<Date | null>(null);
-  const [breakTimer, setBreakTimer] = useState(0);
-  const [loading, setLoading] = useState(false);
-  
+export default function BreakTimer({ timeEntryId, isTimeEntryActive, disabled, userId, onBreakUpdate }: BreakTimerProps) {
+  const [activeBreak, setActiveBreak] = useState<Break | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+
   useEffect(() => {
-    let interval: number | null = null;
+    let interval: NodeJS.Timeout;
     
-    if (breakActive && breakStartTime) {
-      interval = window.setInterval(() => {
-        const now = new Date();
-        const elapsedSeconds = Math.floor((now.getTime() - breakStartTime.getTime()) / 1000);
-        setBreakTimer(elapsedSeconds);
+    if (activeBreak) {
+      interval = setInterval(() => {
+        const startTime = new Date(activeBreak.start_time).getTime();
+        const currentTime = new Date().getTime();
+        const elapsed = Math.floor((currentTime - startTime) / 1000);
+        setElapsedTime(elapsed);
       }, 1000);
-    } else {
-      setBreakTimer(0);
     }
-    
+
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) {
+        clearInterval(interval);
+      }
     };
-  }, [breakActive, breakStartTime]);
-  
-  const startBreak = async () => {
-    if (!timeEntryId || disabled) return;
-    
-    setLoading(true);
-    try {
-      // In a real implementation, you would call your API to record break start
-      // For now, we'll just update the local state
-      setBreakStartTime(new Date());
-      setBreakActive(true);
-      
+  }, [activeBreak]);
+
+  const handleStartBreak = async () => {
+    if (!isTimeEntryActive) {
       toast({
-        title: "Break Started",
-        description: "Your break time is now being tracked"
+        title: "Cannot start break",
+        description: "No active time entry found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const newBreak = await startBreak(timeEntryId);
+      setActiveBreak(newBreak);
+      toast({
+        title: "Break started",
+        description: "Your break has been started successfully.",
       });
     } catch (error) {
-      console.error('Error starting break:', error);
       toast({
-        title: "Error",
-        description: "Could not start break. Please try again.",
-        variant: "destructive"
+        title: "Error starting break",
+        description: "Failed to start break. Please try again.",
+        variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
-  
-  const endBreak = async () => {
-    if (!timeEntryId || !breakActive) return;
-    
-    setLoading(true);
+
+  const handleEndBreak = async () => {
+    if (!activeBreak) return;
+
     try {
-      // In a real implementation, you would call your API to record break end
-      // For now, we'll just update the local state
-      setBreakActive(false);
-      setBreakStartTime(null);
-      
+      await endBreak(activeBreak.id);
+      setActiveBreak(null);
+      setElapsedTime(0);
       toast({
-        title: "Break Ended",
-        description: "You are now back on the clock"
+        title: "Break ended",
+        description: "Your break has been ended successfully.",
       });
     } catch (error) {
-      console.error('Error ending break:', error);
       toast({
-        title: "Error",
-        description: "Could not end break. Please try again.",
-        variant: "destructive"
+        title: "Error ending break",
+        description: "Failed to end break. Please try again.",
+        variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
-  
-  if (!timeEntryId) {
-    return null;
-  }
-  
+
   return (
-    <div className="mt-4 border-t pt-4">
-      <div className="flex justify-between items-center mb-2">
-        <div className="flex items-center">
-          <Coffee className="h-5 w-5 mr-2 text-gray-600" />
-          <span className="text-sm font-medium">Break Timer</span>
-        </div>
-        <div className="text-lg font-mono">{formatTimeDisplay(breakTimer)}</div>
-      </div>
-      
-      <Button
-        className="w-full"
-        variant={breakActive ? "destructive" : "outline"}
-        onClick={breakActive ? endBreak : startBreak}
-        disabled={disabled || loading}
-      >
-        {breakActive ? (
-          <>
-            <Square className="h-4 w-4 mr-2" />
+    <div className="flex flex-col items-center gap-4 p-4 border rounded-lg">
+      <h3 className="text-lg font-semibold">Break Timer</h3>
+      {activeBreak ? (
+        <>
+          <div className="text-2xl font-mono">{formatDuration(elapsedTime)}</div>
+          <Button 
+            variant="destructive"
+            onClick={handleEndBreak}
+          >
             End Break
-          </>
-        ) : (
-          <>
-            <Play className="h-4 w-4 mr-2" />
-            Start Break
-          </>
-        )}
-      </Button>
+          </Button>
+        </>
+      ) : (
+        <Button 
+          variant="secondary"
+          onClick={handleStartBreak}
+          disabled={!isTimeEntryActive}
+        >
+          Start Break
+        </Button>
+      )}
     </div>
   );
-};
-
-export default BreakTimer;
+}
