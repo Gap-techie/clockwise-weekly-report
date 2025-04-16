@@ -1,44 +1,129 @@
-
-import { useEffect, useState } from 'react';
-import { useTimeStore } from '@/lib/timeStore';
 import { Clock, Calendar } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/lib/AuthContext';
+import { startOfWeek, endOfWeek, startOfToday, endOfToday } from 'date-fns';
+import { useQuery } from '@tanstack/react-query';
+
+interface Summary {
+  regularHours: number;
+  overtimeHours: number;
+  totalHours: number;
+}
+
+interface TimeEntry {
+  id: string;
+  clock_in: string;
+  clock_out: string | null;
+  is_complete: boolean;
+  breaks: {
+    start_time: string;
+    end_time: string | null;
+    is_complete: boolean;
+  }[];
+}
 
 const TimeSummary = () => {
-  const { 
-    getWeeklySummary,
-    getTodayHours
-  } = useTimeStore();
-  
-  const [todayHours, setTodayHours] = useState(0);
-  const [weeklySummary, setWeeklySummary] = useState({
-    regularHours: 0,
-    overtimeHours: 0,
-    totalHours: 0
+  const { user } = useAuth();
+
+  // Fetch today's entries
+  const { data: todayHours = 0 } = useQuery({
+    queryKey: ['todayHours', user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+
+      const today = startOfToday();
+      const todayEnd = endOfToday();
+
+      const { data: entries, error } = await supabase
+        .from('time_entries')
+        .select(`
+          id,
+          clock_in,
+          clock_out,
+          is_complete,
+          breaks (
+            start_time,
+            end_time,
+            is_complete
+          )
+        `)
+        .eq('user_id', user.id)
+        .gte('clock_in', today.toISOString())
+        .lte('clock_in', todayEnd.toISOString());
+
+      if (error) throw error;
+      return calculateTotalHours(entries || []);
+    },
+    refetchInterval: 60000, // Refetch every minute
   });
-  
-  // Update summary data
-  useEffect(() => {
-    const updateData = () => {
-      setTodayHours(getTodayHours());
-      const summary = getWeeklySummary();
-      setWeeklySummary({
-        regularHours: summary.regularHours,
-        overtimeHours: summary.overtimeHours, 
-        totalHours: summary.totalHours
-      });
+
+  // Fetch weekly summary
+  const { data: weeklySummary = { regularHours: 0, overtimeHours: 0, totalHours: 0 } } = useQuery({
+    queryKey: ['weeklySummary', user?.id],
+    queryFn: async () => {
+      if (!user) return { regularHours: 0, overtimeHours: 0, totalHours: 0 };
+
+      const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+      const weekEnd = endOfWeek(new Date(), { weekStartsOn: 0 });
+
+      const { data: entries, error } = await supabase
+        .from('time_entries')
+        .select(`
+          id,
+          clock_in,
+          clock_out,
+          is_complete,
+          breaks (
+            start_time,
+            end_time,
+            is_complete
+          )
+        `)
+        .eq('user_id', user.id)
+        .gte('clock_in', weekStart.toISOString())
+        .lte('clock_in', weekEnd.toISOString());
+
+      if (error) throw error;
+      return calculateWeeklySummary(entries || []);
+    },
+    refetchInterval: 60000, // Refetch every minute
+  });
+
+  const calculateTotalHours = (entries: TimeEntry[]): number => {
+    return entries.reduce((total, entry) => {
+      const start = new Date(entry.clock_in);
+      const end = entry.clock_out ? new Date(entry.clock_out) : new Date();
+      
+      // Calculate break duration
+      const breakDuration = (entry.breaks || []).reduce((breakTotal, breakEntry) => {
+        if (!breakEntry.end_time) return breakTotal;
+        const breakStart = new Date(breakEntry.start_time);
+        const breakEnd = new Date(breakEntry.end_time);
+        return breakTotal + (breakEnd.getTime() - breakStart.getTime()) / (1000 * 60 * 60);
+      }, 0);
+
+      // Subtract breaks from total duration
+      const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+      return total + Math.max(0, duration - breakDuration);
+    }, 0);
+  };
+
+  const calculateWeeklySummary = (entries: TimeEntry[]): Summary => {
+    const totalHours = calculateTotalHours(entries);
+    const regularHours = Math.min(totalHours, 40); // 40 hours per week standard
+    const overtimeHours = Math.max(0, totalHours - 40);
+
+    return {
+      regularHours,
+      overtimeHours,
+      totalHours
     };
-    
-    updateData();
-    
-    // Update regularly to capture ongoing time tracking
-    const interval = setInterval(updateData, 60000);
-    return () => clearInterval(interval);
-  }, [getTodayHours, getWeeklySummary]);
-  
+  };
+
   const formatHours = (hours: number) => {
     return `${hours.toFixed(1)} hrs`;
   };
-  
+
   return (
     <div className="bg-white p-5 rounded-lg shadow">
       <h2 className="text-xl font-bold mb-4">Time Summary</h2>
