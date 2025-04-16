@@ -176,8 +176,6 @@ const TimeTracker = () => {
 
   // 🔽 Clock In Logic
   const handleClockIn = async (user: User, projectId: string, jobCode: string) => {
-    handleClockInAnimation(projectId, jobCode);
-
     const jobData = await fetchActiveJobByCode(jobCode);
     if (!jobData) throw new Error("Invalid Job Code");
 
@@ -204,12 +202,6 @@ const TimeTracker = () => {
       description: "Time tracking has started. You can now clock out when needed.",
       duration: 3000
     });
-  };
-
-  // 🔽 Optional animation/UX enhancement placeholder
-  const handleClockInAnimation = (projectId: string, jobCode: string) => {
-    // e.g., highlight UI section or start animation
-    console.log('Clocking in:', { projectId, jobCode });
   };
 
   // 🔽 Centralized error handler
