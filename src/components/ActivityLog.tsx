@@ -1,20 +1,38 @@
-
 import React, { useState, useEffect } from 'react';
 import { useTimeStore } from '@/lib/timeStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateDisplay, formatTimeForDisplay } from '@/lib/timeUtils';
+import { supabase } from '@/lib/supabaseClient';
 
 const RecentActivity = () => {
-  const { timeEntries, projects } = useTimeStore();
+  const { timeEntries } = useTimeStore();
   const [sortedEntries, setSortedEntries] = useState<any[]>([]);
+  const [projects, setProjects] = useState<{[key: string]: string}>({});
   
+  // Fetch projects
+  useEffect(() => {
+    const fetchProjects = async () => {
+      const { data: projectsData, error } = await supabase
+        .from('projects')
+        .select('id, name');
+      
+      if (!error && projectsData) {
+        const projectMap = projectsData.reduce((acc, project) => ({
+          ...acc,
+          [project.id]: project.name
+        }), {});
+        setProjects(projectMap);
+      }
+    };
+
+    fetchProjects();
+  }, []);
+
   useEffect(() => {
     // Process and sort entries
     const processedEntries = timeEntries
       .filter(entry => entry.clockOutTime) // Only show completed entries
       .map(entry => {
-        const project = projects.find(p => p.id === entry.projectId);
-        
         // Ensure clockInTime and clockOutTime are Date objects
         const clockInTime = entry.clockInTime instanceof Date 
           ? entry.clockInTime 
@@ -31,7 +49,7 @@ const RecentActivity = () => {
           ...entry,
           clockInTime,
           clockOutTime,
-          projectName: project?.name || 'Unknown Project',
+          projectName: projects[entry.projectId] || 'Project Not Found',
           hours
         };
       })
