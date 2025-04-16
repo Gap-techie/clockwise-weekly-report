@@ -5,7 +5,7 @@ import { formatTimeDisplay } from '@/lib/timeUtils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/use-toast';
+import { toast, useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
@@ -159,10 +159,7 @@ const TimeTracker = () => {
         await dailySummarypayload(user, currentTimeEntry, regularHours, overtimeHours, totalHours, today);
 
         // Update local state
-        await storeClockOut();
-        setCurrentTimeEntry(null);
-        setSelectedProject('');
-        setJobCode('');
+        await resetClockOutState(storeClockOut, setCurrentTimeEntry, setSelectedProject, setJobCode);
 
         toast({
           title: "Clocked Out Successfully",
@@ -173,31 +170,7 @@ const TimeTracker = () => {
         return; // Add return here to prevent continuing to clock in logic
       }
 
-      // Clock In Logic
-      console.log('Clocking in:', {
-        selectedProject,
-        jobCode: jobCode.trim()
-      });
-
-      if (!selectedProject || !jobCode.trim()) {
-        toast({
-          title: "Missing Information",
-          description: "Please select a project and enter a job code",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      // Validate job code
-      const validationError = await validateJobCode(selectedProject, jobCode);
-      if (validationError) {
-        toast({
-          title: "Invalid Job Code",
-          description: validationError,
-          variant: "destructive"
-        });
-        return;
-      }
+      handleClockIn(selectedProject, jobCode);
 
       const jobData = await fetchActiveJobByCode(jobCode);
       console.log('Found job for clock in:', {
@@ -348,6 +321,13 @@ const TimeTracker = () => {
 export default TimeTracker;
 
 
+async function resetClockOutState(storeClockOut: () => void, setCurrentTimeEntry, setSelectedProject, setJobCode) {
+  await storeClockOut();
+  setCurrentTimeEntry(null);
+  setSelectedProject('');
+  setJobCode('');
+}
+
 async function dailySummarypayload(user, currentTimeEntry: TimeEntry, regularHours: number, overtimeHours: number, totalHours: number, today: string) {
   await createDailySummary({
     userId: user.id,
@@ -368,4 +348,37 @@ function calculateWorkedHours(currentTimeEntry: TimeEntry, now: string) {
   const overtimeHours = Math.max(0, totalHours - 8);
   return { regularHours, overtimeHours, totalHours };
 }
+
+function validateClockInInputs(project: string, code: string): boolean {
+  console.log('Clocking in:', {
+    selectedProject: project,
+    jobCode: code.trim()
+  });
+
+  if (!project || !code.trim()) {
+    toast({
+      title: "Missing Information",
+      description: "Please select a project and enter a job code",
+      variant: "destructive"
+    });
+    return false;
+  }
+
+  return true;
+}
+
+const handleClockIn = async (selectedProject: string, jobCode: string) => {
+  if (!validateClockInInputs(selectedProject, jobCode)) return;
+
+  const validationError = await validateJobCode(selectedProject, jobCode);
+  if (validationError) {
+    toast({
+      title: "Invalid Job Code",
+      description: validationError,
+      variant: "destructive"
+    });
+    return;
+  }
+};
+
 
