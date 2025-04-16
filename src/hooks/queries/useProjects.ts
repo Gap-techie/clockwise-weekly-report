@@ -34,3 +34,26 @@ export default function useProjects(user, toast) {
     staleTime: 5 * 60 * 1000,
   });
 }
+
+// ⏱️ RECENT ACTIVITY TAB
+
+const fetchProjectsForRecentActivity = async () => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, name');
+
+  if (error) throw new Error(error.message);
+
+  return data.reduce((acc: Record<string, string>, project: any) => {
+    acc[project.id] = project.name;
+    return acc;
+  }, {});
+};
+
+export const useProjectsForRecentActivity = () => {
+  return useQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjectsForRecentActivity,
+  });
+};
+
