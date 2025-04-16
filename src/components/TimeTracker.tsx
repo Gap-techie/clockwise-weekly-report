@@ -135,102 +135,83 @@ const TimeTracker = () => {
 
     try {
       if (currentTimeEntry) {
+        // Clock Out Logic
         console.log('Clocking out:', currentTimeEntry);
-        setLoading(true);
+        const now = new Date().toISOString();
+        const today = now.split('T')[0];
+
+        // First update the time entry
+        const { error: updateError } = await supabase
+          .from('time_entries')
+          .update({
+            clock_out: now,
+            is_complete: true
+          })
+          .eq('id', currentTimeEntry.id)
+          .eq('user_id', user.id);
+
+        if (updateError) throw updateError;
+
+        // Calculate hours properly
+        const clockInTime = new Date(currentTimeEntry.clock_in).getTime();
+        const clockOutTime = new Date(now).getTime();
+        const totalHours = (clockOutTime - clockInTime) / (1000 * 60 * 60);
+        const regularHours = Math.min(totalHours, 8);
+        const overtimeHours = Math.max(0, totalHours - 8);
+
+        // Create or update daily summary
+        await createDailySummary({
+          userId: user.id,
+          projectId: currentTimeEntry.project_id,
+          jobId: currentTimeEntry.job_id,
+          regularHours: Number(regularHours.toFixed(2)),
+          overtimeHours: Number(overtimeHours.toFixed(2)),
+          totalHours: Number(totalHours.toFixed(2)),
+          date: today
+        });
+
+        // Update local state
+        await storeClockOut();
+        setCurrentTimeEntry(null);
+        setSelectedProject('');
+        setJobCode('');
+
+        toast({
+          title: "Clocked Out Successfully",
+          description: "You have been clocked out. You can now clock in again.",
+          duration: 3000
+        });
         
-        try {
-          // Clock Out Logic
-          const now = new Date().toISOString();
-          const today = now.split('T')[0];
+        return; // Add return here to prevent continuing to clock in logic
+      }
 
-          // First update the time entry
-          const { error: updateError } = await supabase
-            .from('time_entries')
-            .update({
-              clock_out: now,
-              is_complete: true
-            })
-            .eq('id', currentTimeEntry.id)
-            .eq('user_id', user.id);
+      // Clock In Logic
+      console.log('Clocking in:', {
+        selectedProject,
+        jobCode: jobCode.trim()
+      });
 
-          if (updateError) throw updateError;
-
-          // Calculate hours properly
-          const clockInTime = new Date(currentTimeEntry.clock_in).getTime();
-          const clockOutTime = new Date(now).getTime();
-          const totalHours = (clockOutTime - clockInTime) / (1000 * 60 * 60);
-          const regularHours = Math.min(totalHours, 8);
-          const overtimeHours = Math.max(0, totalHours - 8);
-
-          // Create or update daily summary
-          await createDailySummary({
-            userId: user.id,
-            projectId: currentTimeEntry.project_id,
-            jobId: currentTimeEntry.job_id,
-            regularHours: Number(regularHours.toFixed(2)),
-            overtimeHours: Number(overtimeHours.toFixed(2)),
-            totalHours: Number(totalHours.toFixed(2)),
-            date: today
-          });
-
-          // Update local state
-          await storeClockOut();
-          setCurrentTimeEntry(null);
-          setSelectedProject('');
-          setJobCode('');
-
-          toast({
-            title: "Clocked Out Successfully",
-            description: "You have been clocked out. You can now clock in again.",
-            duration: 3000
-          });
-        } catch (err: any) {
-          console.error('Error in clock out process:', err);
-          toast({
-            title: "Clock Out Error",
-            description: err.message || "There was an error clocking out. Please try again.",
-            variant: "destructive"
-          });
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        console.log('Clocking inxxxx:', {
-          selectedProject,
-          jobCode: jobCode.trim()
+      if (!selectedProject || !jobCode.trim()) {
+        toast({
+          title: "Missing Information",
+          description: "Please select a project and enter a job code",
+          variant: "destructive"
         });
-        // Clock In Logic
-        if (!selectedProject || !jobCode.trim()) {
-          toast({
-            title: "Missing Information",
-            description: "Please select a project and enter a job code",
-            variant: "destructive"
-          });
-          setLoading(false);
-          return;
-        }
+        return;
+      }
 
-        console.log('Starting clock in process:', {
-          projectId: selectedProject,
-          jobCode: jobCode.trim(),
-          timestamp: new Date().toISOString()
+      // Validate job code
+      const validationError = await validateJobCode(selectedProject, jobCode);
+      if (validationError) {
+        toast({
+          title: "Invalid Job Code",
+          description: validationError,
+          variant: "destructive"
         });
-
-        // Validate job code
-        const validationError = await validateJobCode(selectedProject, jobCode);
-        if (validationError) {
-          toast({
-            title: "Invalid Job Code",
-            description: validationError,
-            variant: "destructive"
-          });
-          setLoading(false);
-          return;
-        }
+        return;
       }
 
       const jobData = await fetchActiveJobByCode(jobCode);
-
       console.log('Found job for clock in:', {
         jobId: jobData.id,
         jobCode: jobData.code
@@ -246,11 +227,11 @@ const TimeTracker = () => {
 
       const completeTimeEntry: TimeEntry = {
         ...entryData,
-        jobs: { code: jobData.code }  // Assuming you're extending type for display
+        jobs: { code: jobData.code }
       };
 
       setCurrentTimeEntry(completeTimeEntry);
-      storeClockIn(selectedProject, jobData.code);
+      await storeClockIn(selectedProject, jobData.code);
 
       toast({
         title: "Clocked In Successfully",
@@ -259,6 +240,7 @@ const TimeTracker = () => {
       });
 
     } catch (err: any) {
+      console.error('Error in clock in/out process:', err);
       if (err.message === 'Invalid Job Code') {
         toast({
           title: "Invalid Job Code",
@@ -273,7 +255,7 @@ const TimeTracker = () => {
         });
       } else {
         toast({
-          title: "Clock In Failed",
+          title: "Operation Failed",
           description: err.message || "Something went wrong. Please try again.",
           variant: "destructive"
         });
